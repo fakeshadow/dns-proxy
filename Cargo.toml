@@ -1,0 +1,28 @@
+[package]
+name = "dns-proxy"
+version = "0.1.0"
+edition = "2021"
+authors = ["fakeshadow <24548779@qq.com>"]
+description = "simple dns relay proxy"
+repository = "https://github.com/fakeshadow/dns-proxy.git"
+license = "MIT"
+readme = "README.md"
+
+keywords = [
+    "dns-proxy",
+    "dot",
+    "doh"
+]
+
+[profile.release]
+lto = "thin"
+opt-level = 3
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[dependencies]
+bpaf = "0.5.7"
+tokio = { version = "1", features = ["net", "rt"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

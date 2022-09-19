@@ -16,7 +16,7 @@ fn main() {
     let cfg = parse_arg();
 
     tracing_subscriber::fmt()
-        .with_max_level(cfg.log_level)
+        .with_env_filter(format!("dns_proxy={}", cfg.log_level.as_str()))
         .init();
 
     if let Err(e) = run(cfg) {

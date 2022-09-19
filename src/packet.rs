@@ -3,8 +3,10 @@
 #![allow(clippy::upper_case_acronyms)]
 #![allow(dead_code)]
 
-use std::io::{Error, ErrorKind, Result};
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::{
+    io::{Error, ErrorKind, Result},
+    net::{Ipv4Addr, Ipv6Addr},
+};
 
 pub struct DnsBufReader<'a> {
     pub buf: &'a mut [u8],
@@ -212,7 +214,7 @@ impl ResultCode {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct DnsHeader {
     pub id: u16,                    // 16 bits
     pub recursion_desired: bool,    // 1 bit
@@ -232,7 +234,7 @@ pub struct DnsHeader {
 }
 
 impl DnsHeader {
-    pub fn new() -> DnsHeader {
+    pub const fn new() -> DnsHeader {
         DnsHeader {
             id: 0,
             recursion_desired: false,
@@ -307,7 +309,7 @@ impl DnsHeader {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone, Hash, Copy)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum QueryType {
     UNKNOWN(u16),
     A,     // 1
@@ -341,14 +343,14 @@ impl QueryType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DnsQuestion {
     pub name: String,
     pub qtype: QueryType,
 }
 
 impl DnsQuestion {
-    pub fn new(name: String, qtype: QueryType) -> Self {
+    pub const fn new(name: String, qtype: QueryType) -> Self {
         Self { name, qtype }
     }
 
@@ -371,7 +373,7 @@ impl DnsQuestion {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(dead_code)]
 pub enum DnsRecord {
     UNKNOWN {
@@ -605,7 +607,7 @@ pub struct DnsPacket {
 }
 
 impl DnsPacket {
-    pub fn new() -> DnsPacket {
+    pub const fn new() -> DnsPacket {
         DnsPacket {
             header: DnsHeader::new(),
             questions: Vec::new(),

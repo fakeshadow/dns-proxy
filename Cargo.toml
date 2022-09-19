@@ -18,8 +18,8 @@ keywords = [
 bpaf = "0.5.7"
 futures-core = { version = "0.3", default-features = false, features = ["alloc"] }
 tokio = { version = "1", features = ["net", "rt-multi-thread"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing = { version = "0.1.36", default-features = false }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt"] }
 xitca-client = { version = "0.1", features = ["http2", "rustls"] }
 
 [patch.crates-io]

@@ -40,7 +40,7 @@ pub fn parse_arg() -> Config {
 
     let log_level = short('L')
         .long("log-level")
-        .help("display level of logger: Trace=0,Debug=1,Info=2,Warn=3,Error=4")
+        .help("Display level of logger: error,warn,info,debug,trace. number 1-5 can be used to represent level in the same order from error to trance")
         .argument("LOG_LEVEL")
         .parse(|level| level.parse())
         .fallback(Level::INFO);

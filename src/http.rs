@@ -1,7 +1,7 @@
 use std::{convert::TryFrom, net::SocketAddr};
 
 use futures_core::future::BoxFuture;
-use tracing::trace;
+use tracing::debug;
 use xitca_client::{
     http::{
         header::{HeaderValue, ACCEPT, CONTENT_TYPE},
@@ -44,7 +44,7 @@ impl Client {
 
         let res = req.body(body).send().await?;
 
-        trace!(
+        debug!(
             "forward dns query outcome. status_code: {:?}, headers: {:?}",
             res.status(),
             res.headers()
@@ -86,7 +86,7 @@ impl Resolve for BootstrapResolver {
         'h: 'f,
     {
         Box::pin(async move {
-            trace!("http-client resolving host: {}", hostname);
+            debug!("http-client resolving host: {}", hostname);
 
             let mut buf = [0; 512];
 
@@ -110,11 +110,11 @@ impl Resolve for BootstrapResolver {
             let mut res = Vec::new();
 
             for answer in dns_packet.answers {
-                trace!("http-client resolved to dns record: {:?}", answer);
+                debug!("http-client resolved to dns record: {:?}", answer);
                 match answer {
                     DnsRecord::A { addr, .. } => res.push((addr, port).into()),
                     DnsRecord::AAAA { addr, .. } => res.push((addr, port).into()),
-                    record => trace!("dns record: {:?} is not supported!", record),
+                    record => debug!("dns record: {:?} is not supported!", record),
                 }
             }
 

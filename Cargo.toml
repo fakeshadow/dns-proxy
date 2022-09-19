@@ -14,15 +14,24 @@ keywords = [
     "doh"
 ]
 
+[dependencies]
+bpaf = "0.5.7"
+futures-core = { version = "0.3", default-features = false, features = ["alloc"] }
+tokio = { version = "1", features = ["net", "rt-multi-thread"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+xitca-client = { version = "0.1", features = ["http2", "rustls"] }
+
+[patch.crates-io]
+xitca-client = { git = "https://github.com/HFQR/xitca-web" }
+xitca-http = { git = "https://github.com/HFQR/xitca-web" }
+xitca-io = { git = "https://github.com/HFQR/xitca-web" }
+xitca-service = { git = "https://github.com/HFQR/xitca-web" }
+xitca-unsafe-collection = { git = "https://github.com/HFQR/xitca-web" }
+
 [profile.release]
-lto = "thin"
+lto = true
 opt-level = 3
 codegen-units = 1
 panic = "abort"
-strip = true
-
-[dependencies]
-bpaf = "0.5.7"
-tokio = { version = "1", features = ["net", "rt"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+strip = "symbol"

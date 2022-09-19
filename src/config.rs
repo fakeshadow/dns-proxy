@@ -10,7 +10,7 @@ use tracing::Level;
 #[derive(Debug)]
 pub struct Config {
     pub listen_addr: Vec<SocketAddr>,
-    pub upstream_addr: Vec<SocketAddr>,
+    pub upstream_addr: Vec<String>,
     pub boot_strap_addr: Vec<SocketAddr>,
     pub log_level: Level,
 }
@@ -29,17 +29,7 @@ pub fn parse_arg() -> Config {
         .long("upstream")
         .help("Upstream server for dns look up")
         .argument("UPSTREAM")
-        .some("--upstream argment must not be empty. At least one upstream dns server is needed")
-        .parse(|upstream| {
-            // TODO: parse dot and doh format.
-            let mut res = Vec::new();
-            for u in upstream {
-                for addr in u.to_socket_addrs()? {
-                    res.push(addr);
-                }
-            }
-            Ok::<_, std::io::Error>(res)
-        });
+        .some("--upstream argment must not be empty. At least one upstream dns server is needed");
 
     let boot_strap_addr = short('b')
         .long("bootstrap")

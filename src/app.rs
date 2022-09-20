@@ -1,5 +1,6 @@
 use std::{
     future::Future,
+    io,
     net::{SocketAddr, ToSocketAddrs},
     sync::Arc,
 };
@@ -25,15 +26,19 @@ impl App {
         let mut buf = [0; 512];
 
         loop {
-            let (len, addr) = app.listener.recv_from(&mut buf).await?;
-
-            let app = app.clone();
-            let buf = Vec::from(&buf[..len]);
-            tokio::spawn(async move {
-                if let Err(e) = app.forward(buf, addr).await {
-                    error!("forwarding dns lookup error: {}", e)
+            match app.listener.recv_from(&mut buf).await {
+                Ok((len, addr)) => {
+                    let app = app.clone();
+                    let buf = Vec::from(&buf[..len]);
+                    tokio::spawn(async move {
+                        if let Err(e) = app.forward(buf, addr).await {
+                            error!("forwarding dns lookup error: {}", e)
+                        }
+                    });
                 }
-            });
+                Err(ref e) if connection_error(e) => continue,
+                Err(e) => return Err(e.into()),
+            }
         }
     }
 
@@ -78,4 +83,10 @@ where
     }
 
     Err(err.unwrap())
+}
+
+fn connection_error(e: &io::Error) -> bool {
+    e.kind() == io::ErrorKind::ConnectionRefused
+        || e.kind() == io::ErrorKind::ConnectionAborted
+        || e.kind() == io::ErrorKind::ConnectionReset
 }

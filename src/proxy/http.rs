@@ -4,7 +4,7 @@ use futures_core::future::BoxFuture;
 use tracing::debug;
 use xitca_client::{
     http::{
-        header::{HeaderValue, ACCEPT, CONTENT_TYPE},
+        header::{HeaderMap, HeaderValue, ACCEPT, CONTENT_TYPE},
         Uri,
     },
     Resolve,
@@ -48,7 +48,7 @@ impl Proxy for HttpProxy {
             req.headers_mut().insert(ACCEPT, DNS_MSG_HDR.clone());
             req.headers_mut().insert(CONTENT_TYPE, DNS_MSG_HDR.clone());
 
-            let res = req.body(buf).send().await?;
+            let mut res = req.body(buf).send().await?;
 
             debug!(
                 "forward dns query outcome. status_code: {:?}, headers: {:?}",
@@ -58,18 +58,38 @@ impl Proxy for HttpProxy {
 
             if res.status() != 200 {
                 use std::{error, fmt};
-                #[derive(Debug)]
-                struct ToDoError;
 
-                impl fmt::Display for ToDoError {
+                #[derive(Debug)]
+                struct HttpError {
+                    status: u16,
+                    headers: HeaderMap,
+                    body_string: String,
+                }
+
+                impl fmt::Display for HttpError {
                     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                        f.write_str("doh server return non 200 status")
+                        write!(
+                            f,
+                            "doh server error response status: {}, headers: {:?}, body: {}",
+                            self.status,
+                            &self.headers,
+                            self.body_string.as_str()
+                        )
                     }
                 }
 
-                impl error::Error for ToDoError {}
+                impl error::Error for HttpError {}
 
-                return Err(Box::new(ToDoError) as _);
+                let status = res.status().as_u16();
+                let headers = std::mem::take(res.headers_mut());
+
+                let body_string = res.string().await?;
+
+                return Err(Box::new(HttpError {
+                    status,
+                    headers,
+                    body_string,
+                }) as _);
             }
 
             res.body().await.map_err(Error::from)

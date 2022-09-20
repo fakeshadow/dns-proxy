@@ -7,11 +7,15 @@ use std::{
 use tokio::net::UdpSocket;
 use tracing::error;
 
-use crate::{config::Config, error::Error, http::Client};
+use crate::{
+    config::Config,
+    error::Error,
+    proxy::{http::HttpProxy, Proxy},
+};
 
 pub struct App {
     listener: UdpSocket,
-    upstream: Client,
+    proxy: Box<dyn Proxy>,
 }
 
 impl App {
@@ -38,16 +42,19 @@ impl App {
 
         let mut boot_strap = cfg.boot_strap_addr;
         let boot_strap = boot_strap.pop().unwrap().to_socket_addrs()?.next().unwrap();
-        let upstream = try_iter(cfg.upstream_addr.into_iter(), |addr| {
-            Client::try_from_string(addr, boot_strap)
+        let client = try_iter(cfg.upstream_addr.into_iter(), |addr| {
+            HttpProxy::try_from_string(addr, boot_strap)
         })
         .await?;
 
-        Ok(Arc::new(Self { listener, upstream }))
+        Ok(Arc::new(Self {
+            listener,
+            proxy: Box::new(client),
+        }))
     }
 
     async fn forward(&self, buf: Vec<u8>, addr: SocketAddr) -> Result<(), Error> {
-        let res = self.upstream.proxy_doh(buf).await?;
+        let res = self.proxy.proxy(buf).await?;
         self.listener.send_to(res.as_slice(), addr).await?;
         Ok(())
     }

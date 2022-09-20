@@ -1,8 +1,8 @@
 mod app;
 mod config;
+mod dns;
 mod error;
-mod http;
-mod packet;
+mod proxy;
 
 use tracing::{error, info};
 

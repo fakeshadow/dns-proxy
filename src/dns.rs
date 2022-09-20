@@ -1,29 +1,24 @@
 // Copy from https://github.com/EmilHernvall/dnsguide
 
 #![allow(clippy::upper_case_acronyms)]
-#![allow(dead_code)]
 
 use std::{
-    io::{Error, ErrorKind, Result},
+    io,
     net::{Ipv4Addr, Ipv6Addr},
 };
 
-pub struct DnsBufReader<'a> {
+pub struct DnsBuf<'a> {
     pub buf: &'a mut [u8],
     pub pos: usize,
 }
 
-impl<'a> DnsBufReader<'a> {
+impl<'a> DnsBuf<'a> {
     pub fn new(buf: &'a mut [u8]) -> Self {
-        DnsBufReader { buf, pos: 0 }
+        DnsBuf { buf, pos: 0 }
     }
 
     pub fn as_slice(&self) -> &[u8] {
         &self.buf[..self.pos]
-    }
-
-    pub fn pos(&self) -> usize {
-        self.pos
     }
 
     fn step(&mut self, steps: usize) {
@@ -34,37 +29,38 @@ impl<'a> DnsBufReader<'a> {
         self.pos = pos;
     }
 
-    fn read(&mut self) -> Result<u8> {
+    fn read(&mut self) -> io::Result<u8> {
         if self.pos >= 512 {
-            return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
+            return Err(eof_err());
         }
+
         let res = self.buf[self.pos];
         self.pos += 1;
 
         Ok(res)
     }
 
-    fn get(&mut self, pos: usize) -> Result<u8> {
+    fn get(&mut self, pos: usize) -> io::Result<u8> {
         if pos >= 512 {
-            return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
+            return Err(eof_err());
         }
         Ok(self.buf[pos])
     }
 
-    pub fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8]> {
+    fn get_range(&mut self, start: usize, len: usize) -> io::Result<&[u8]> {
         if start + len >= 512 {
-            return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
+            return Err(eof_err());
         }
         Ok(&self.buf[start..start + len as usize])
     }
 
-    fn read_u16(&mut self) -> Result<u16> {
+    fn read_u16(&mut self) -> io::Result<u16> {
         let res = ((self.read()? as u16) << 8) | (self.read()? as u16);
 
         Ok(res)
     }
 
-    fn read_u32(&mut self) -> Result<u32> {
+    fn read_u32(&mut self) -> io::Result<u32> {
         let res = ((self.read()? as u32) << 24)
             | ((self.read()? as u32) << 16)
             | ((self.read()? as u32) << 8)
@@ -73,8 +69,8 @@ impl<'a> DnsBufReader<'a> {
         Ok(res)
     }
 
-    fn read_qname(&mut self, outstr: &mut String) -> Result<()> {
-        let mut pos = self.pos();
+    fn read_qname(&mut self, outstr: &mut String) -> io::Result<()> {
+        let mut pos = self.pos;
         let mut jumped = false;
 
         let mut delim = "";
@@ -123,29 +119,29 @@ impl<'a> DnsBufReader<'a> {
         Ok(())
     }
 
-    fn write(&mut self, val: u8) -> Result<()> {
+    fn write(&mut self, val: u8) -> io::Result<()> {
         if self.pos >= 512 {
-            return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
+            return Err(eof_err());
         }
         self.buf[self.pos] = val;
         self.pos += 1;
         Ok(())
     }
 
-    fn write_u8(&mut self, val: u8) -> Result<()> {
+    fn write_u8(&mut self, val: u8) -> io::Result<()> {
         self.write(val)?;
 
         Ok(())
     }
 
-    fn write_u16(&mut self, val: u16) -> Result<()> {
+    fn write_u16(&mut self, val: u16) -> io::Result<()> {
         self.write((val >> 8) as u8)?;
         self.write((val & 0xFF) as u8)?;
 
         Ok(())
     }
 
-    fn write_u32(&mut self, val: u32) -> Result<()> {
+    fn write_u32(&mut self, val: u32) -> io::Result<()> {
         self.write(((val >> 24) & 0xFF) as u8)?;
         self.write(((val >> 16) & 0xFF) as u8)?;
         self.write(((val >> 8) & 0xFF) as u8)?;
@@ -154,14 +150,14 @@ impl<'a> DnsBufReader<'a> {
         Ok(())
     }
 
-    fn write_qname(&mut self, qname: &str) -> Result<()> {
+    fn write_qname(&mut self, qname: &str) -> io::Result<()> {
         let split_str = qname.split('.').collect::<Vec<&str>>();
 
         for label in split_str {
             let len = label.len();
             if len > 0x34 {
-                return Err(Error::new(
-                    ErrorKind::InvalidInput,
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
                     "Single label exceeds 63 characters of length",
                 ));
             }
@@ -177,13 +173,13 @@ impl<'a> DnsBufReader<'a> {
         Ok(())
     }
 
-    fn set(&mut self, pos: usize, val: u8) -> Result<()> {
+    fn set(&mut self, pos: usize, val: u8) -> io::Result<()> {
         self.buf[pos] = val;
 
         Ok(())
     }
 
-    fn set_u16(&mut self, pos: usize, val: u16) -> Result<()> {
+    fn set_u16(&mut self, pos: usize, val: u16) -> io::Result<()> {
         self.set(pos, (val >> 8) as u8)?;
         self.set(pos + 1, (val & 0xFF) as u8)?;
 
@@ -254,7 +250,7 @@ impl DnsHeader {
         }
     }
 
-    pub fn read(&mut self, buffer: &mut DnsBufReader<'_>) -> Result<()> {
+    pub fn read(&mut self, buffer: &mut DnsBuf<'_>) -> io::Result<()> {
         self.id = buffer.read_u16()?;
 
         let flags = buffer.read_u16()?;
@@ -281,7 +277,7 @@ impl DnsHeader {
         Ok(())
     }
 
-    pub fn write(&self, buffer: &mut DnsBufReader<'_>) -> Result<()> {
+    pub fn write(&self, buffer: &mut DnsBuf<'_>) -> io::Result<()> {
         buffer.write_u16(self.id)?;
 
         (buffer.write_u8(
@@ -354,7 +350,7 @@ impl DnsQuestion {
         Self { name, qtype }
     }
 
-    pub fn read(&mut self, buffer: &mut DnsBufReader) -> Result<()> {
+    pub fn read(&mut self, buffer: &mut DnsBuf) -> io::Result<()> {
         buffer.read_qname(&mut self.name)?;
         self.qtype = QueryType::from_num(buffer.read_u16()?); // qtype
         let _ = buffer.read_u16()?; // class
@@ -362,7 +358,7 @@ impl DnsQuestion {
         Ok(())
     }
 
-    pub fn write(&self, buffer: &mut DnsBufReader) -> Result<()> {
+    pub fn write(&self, buffer: &mut DnsBuf) -> io::Result<()> {
         buffer.write_qname(&self.name)?;
 
         let typenum = self.qtype.to_num();
@@ -411,7 +407,7 @@ pub enum DnsRecord {
 }
 
 impl DnsRecord {
-    pub fn read(buffer: &mut DnsBufReader) -> Result<DnsRecord> {
+    pub fn read(buffer: &mut DnsBuf) -> io::Result<DnsRecord> {
         let mut domain = String::new();
         buffer.read_qname(&mut domain)?;
 
@@ -496,8 +492,8 @@ impl DnsRecord {
         }
     }
 
-    pub fn write(&self, buffer: &mut DnsBufReader) -> Result<usize> {
-        let start_pos = buffer.pos();
+    pub fn write(&self, buffer: &mut DnsBuf) -> io::Result<usize> {
+        let start_pos = buffer.pos;
 
         match *self {
             DnsRecord::A {
@@ -527,12 +523,12 @@ impl DnsRecord {
                 buffer.write_u16(1)?;
                 buffer.write_u32(ttl)?;
 
-                let pos = buffer.pos();
+                let pos = buffer.pos;
                 buffer.write_u16(0)?;
 
                 buffer.write_qname(host)?;
 
-                let size = buffer.pos() - (pos + 2);
+                let size = buffer.pos - (pos + 2);
                 buffer.set_u16(pos, size as u16)?;
             }
             DnsRecord::CNAME {
@@ -545,12 +541,12 @@ impl DnsRecord {
                 buffer.write_u16(1)?;
                 buffer.write_u32(ttl)?;
 
-                let pos = buffer.pos();
+                let pos = buffer.pos;
                 buffer.write_u16(0)?;
 
                 buffer.write_qname(host)?;
 
-                let size = buffer.pos() - (pos + 2);
+                let size = buffer.pos - (pos + 2);
                 buffer.set_u16(pos, size as u16)?;
             }
             DnsRecord::MX {
@@ -564,13 +560,13 @@ impl DnsRecord {
                 buffer.write_u16(1)?;
                 buffer.write_u32(ttl)?;
 
-                let pos = buffer.pos();
+                let pos = buffer.pos;
                 buffer.write_u16(0)?;
 
                 buffer.write_u16(priority)?;
                 buffer.write_qname(host)?;
 
-                let size = buffer.pos() - (pos + 2);
+                let size = buffer.pos - (pos + 2);
                 buffer.set_u16(pos, size as u16)?;
             }
             DnsRecord::AAAA {
@@ -593,7 +589,7 @@ impl DnsRecord {
             }
         }
 
-        Ok(buffer.pos() - start_pos)
+        Ok(buffer.pos - start_pos)
     }
 }
 
@@ -617,7 +613,7 @@ impl DnsPacket {
         }
     }
 
-    pub fn from_buffer(buffer: &mut DnsBufReader) -> Result<DnsPacket> {
+    pub fn from_buf(buffer: &mut DnsBuf) -> io::Result<DnsPacket> {
         let mut result = DnsPacket::new();
         result.header.read(buffer)?;
 
@@ -643,7 +639,7 @@ impl DnsPacket {
         Ok(result)
     }
 
-    pub fn write(&mut self, buffer: &mut DnsBufReader) -> Result<()> {
+    pub fn write(&mut self, buffer: &mut DnsBuf) -> io::Result<()> {
         self.header.questions = self.questions.len() as u16;
         self.header.answers = self.answers.len() as u16;
         self.header.authoritative_entries = self.authorities.len() as u16;
@@ -666,84 +662,13 @@ impl DnsPacket {
 
         Ok(())
     }
+}
 
-    pub fn get_random_a(&self) -> Option<String> {
-        if !self.answers.is_empty() {
-            let a_record = &self.answers[0];
-            if let DnsRecord::A { ref addr, .. } = *a_record {
-                return Some(addr.to_string());
-            }
-        }
-
-        None
-    }
-
-    pub fn get_resolved_ns(&self, qname: &str) -> Option<String> {
-        let mut new_authorities = Vec::new();
-        for auth in &self.authorities {
-            if let DnsRecord::NS {
-                ref domain,
-                ref host,
-                ..
-            } = *auth
-            {
-                if !qname.ends_with(domain) {
-                    continue;
-                }
-
-                for rsrc in &self.resources {
-                    if let DnsRecord::A {
-                        ref domain,
-                        ref addr,
-                        ttl,
-                    } = *rsrc
-                    {
-                        if domain != host {
-                            continue;
-                        }
-
-                        let rec = DnsRecord::A {
-                            domain: host.clone(),
-                            addr: *addr,
-                            ttl,
-                        };
-
-                        new_authorities.push(rec);
-                    }
-                }
-            }
-        }
-
-        if !new_authorities.is_empty() {
-            if let DnsRecord::A { addr, .. } = new_authorities[0] {
-                return Some(addr.to_string());
-            }
-        }
-
-        None
-    }
-
-    pub fn get_unresolved_ns(&self, qname: &str) -> Option<String> {
-        let mut new_authorities = Vec::new();
-        for auth in &self.authorities {
-            if let DnsRecord::NS {
-                ref domain,
-                ref host,
-                ..
-            } = *auth
-            {
-                if !qname.ends_with(domain) {
-                    continue;
-                }
-
-                new_authorities.push(host);
-            }
-        }
-
-        if !new_authorities.is_empty() {
-            return Some(new_authorities[0].clone());
-        }
-
-        None
-    }
+#[cold]
+#[inline(never)]
+fn eof_err() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::UnexpectedEof,
+        "buffer overflow. DnsBuf is limited to 512 bytes",
+    )
 }

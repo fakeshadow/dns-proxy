@@ -11,62 +11,69 @@ use xitca_client::{
 };
 
 use crate::{
+    dns::{DnsBuf, DnsPacket, DnsQuestion, DnsRecord, QueryType},
     error::Error,
-    packet::{DnsBufReader, DnsPacket, DnsQuestion, DnsRecord, QueryType},
 };
+
+use super::Proxy;
 
 static DNS_MSG_HDR: HeaderValue = HeaderValue::from_static("application/dns-message");
 
-pub struct Client {
+pub struct HttpProxy {
     cli: xitca_client::Client,
-    upstream_uri: Uri,
+    uri: Uri,
 }
 
-impl Client {
+impl HttpProxy {
     pub async fn try_from_string(
         upstream: String,
         boot_strap_addr: SocketAddr,
     ) -> Result<Self, Error> {
-        let upstream_uri = Uri::try_from(upstream)?;
+        let uri = Uri::try_from(upstream)?;
+
         let cli = xitca_client::Client::builder()
             .resolver(BootstrapResolver { boot_strap_addr })
             .rustls()
             .finish();
 
-        Ok(Self { cli, upstream_uri })
+        Ok(Self { cli, uri })
     }
+}
 
-    pub async fn proxy_doh(&self, body: Vec<u8>) -> Result<Vec<u8>, Error> {
-        let mut req = self.cli.post(self.upstream_uri.clone())?;
+impl Proxy for HttpProxy {
+    fn proxy(&self, buf: Vec<u8>) -> BoxFuture<'_, Result<Vec<u8>, Error>> {
+        Box::pin(async move {
+            let mut req = self.cli.post(self.uri.clone())?;
 
-        req.headers_mut().insert(ACCEPT, DNS_MSG_HDR.clone());
-        req.headers_mut().insert(CONTENT_TYPE, DNS_MSG_HDR.clone());
+            req.headers_mut().insert(ACCEPT, DNS_MSG_HDR.clone());
+            req.headers_mut().insert(CONTENT_TYPE, DNS_MSG_HDR.clone());
 
-        let res = req.body(body).send().await?;
+            let res = req.body(buf).send().await?;
 
-        debug!(
-            "forward dns query outcome. status_code: {:?}, headers: {:?}",
-            res.status(),
-            res.headers()
-        );
+            debug!(
+                "forward dns query outcome. status_code: {:?}, headers: {:?}",
+                res.status(),
+                res.headers()
+            );
 
-        if res.status() != 200 {
-            use std::{error, fmt};
-            #[derive(Debug)]
-            struct ToDoError;
+            if res.status() != 200 {
+                use std::{error, fmt};
+                #[derive(Debug)]
+                struct ToDoError;
 
-            impl fmt::Display for ToDoError {
-                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    f.write_str("doh server return non 200 status")
+                impl fmt::Display for ToDoError {
+                    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                        f.write_str("doh server return non 200 status")
+                    }
                 }
+
+                impl error::Error for ToDoError {}
+
+                return Err(Box::new(ToDoError) as _);
             }
 
-            impl error::Error for ToDoError {}
-
-            return Err(Box::new(ToDoError) as _);
-        }
-
-        res.body().await.map_err(Error::from)
+            res.body().await.map_err(Error::from)
+        })
     }
 }
 
@@ -90,22 +97,22 @@ impl Resolve for BootstrapResolver {
 
             let mut buf = [0; 512];
 
-            let mut reader = DnsBufReader::new(&mut buf);
+            let mut dns_buf = DnsBuf::new(&mut buf);
 
             let mut dns_packet = DnsPacket::new();
             dns_packet
                 .questions
                 .push(DnsQuestion::new(String::from(hostname), QueryType::A));
 
-            dns_packet.write(&mut reader)?;
+            dns_packet.write(&mut dns_buf)?;
 
             let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
             socket.connect(self.boot_strap_addr).await?;
-            socket.send(reader.as_slice()).await?;
+            socket.send(dns_buf.as_slice()).await?;
 
             let len = socket.recv(&mut buf).await?;
-            let mut reader = DnsBufReader::new(&mut buf[..len]);
-            let dns_packet = DnsPacket::from_buffer(&mut reader)?;
+            let mut reader = DnsBuf::new(&mut buf[..len]);
+            let dns_packet = DnsPacket::from_buf(&mut reader)?;
 
             let mut res = Vec::new();
 

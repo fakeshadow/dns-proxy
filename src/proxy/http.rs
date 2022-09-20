@@ -25,11 +25,8 @@ pub struct HttpProxy {
 }
 
 impl HttpProxy {
-    pub async fn try_from_string(
-        upstream: String,
-        boot_strap_addr: SocketAddr,
-    ) -> Result<Self, Error> {
-        let uri = Uri::try_from(upstream)?;
+    pub async fn try_from_uri(uri: String, boot_strap_addr: SocketAddr) -> Result<Self, Error> {
+        let uri = Uri::try_from(uri)?;
 
         let cli = xitca_client::Client::builder()
             .resolver(BootstrapResolver { boot_strap_addr })

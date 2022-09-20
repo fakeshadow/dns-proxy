@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use futures_core::future::BoxFuture;
 use tokio::net::UdpSocket;
 
@@ -7,6 +9,14 @@ use super::Proxy;
 
 pub struct UdpProxy {
     socket: UdpSocket,
+}
+
+impl UdpProxy {
+    pub async fn try_from_addr(addr: SocketAddr) -> Result<Self, Error> {
+        let socket = UdpSocket::bind("0.0.0.0:0").await?;
+        socket.connect(addr).await?;
+        Ok(Self { socket })
+    }
 }
 
 impl Proxy for UdpProxy {

@@ -1,6 +1,7 @@
 /// Argument parsing.
 use std::{
     net::{SocketAddr, ToSocketAddrs},
+    str::FromStr,
     vec,
 };
 
@@ -10,7 +11,7 @@ use tracing::Level;
 #[derive(Debug)]
 pub struct Config {
     pub listen_addr: Vec<SocketAddr>,
-    pub upstream_addr: Vec<String>,
+    pub upstream_addr: Vec<UpstreamVariant>,
     pub boot_strap_addr: Vec<SocketAddr>,
     pub log_level: Level,
 }
@@ -29,7 +30,16 @@ pub fn parse_arg() -> Config {
         .long("upstream")
         .help("Upstream server for dns look up")
         .argument("UPSTREAM")
-        .some("--upstream argment must not be empty. At least one upstream dns server is needed");
+        .some("--upstream argment must not be empty. At least one upstream dns server is needed")
+        .parse(|addr| {
+            let mut upstream = Vec::new();
+
+            for addr in addr {
+                let addr = addr.parse::<UpstreamVariant>()?;
+                upstream.push(addr);
+            }
+            Ok::<_, <SocketAddr as FromStr>::Err>(upstream)
+        });
 
     let boot_strap_addr = short('b')
         .long("bootstrap")
@@ -53,4 +63,26 @@ pub fn parse_arg() -> Config {
     })
     .to_options()
     .run()
+}
+
+#[derive(Debug)]
+pub enum UpstreamVariant {
+    Https(String),
+    Udp(SocketAddr),
+    Tls(SocketAddr),
+}
+
+impl FromStr for UpstreamVariant {
+    type Err = <SocketAddr as FromStr>::Err;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
+        if s.starts_with("https://") {
+            return Ok(Self::Https(String::from(s)));
+        }
+        if s.ends_with(":853") {
+            return s.parse().map(Self::Tls);
+        }
+        s.parse().map(Self::Udp)
+    }
 }

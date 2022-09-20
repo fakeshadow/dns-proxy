@@ -9,9 +9,9 @@ use tokio::net::UdpSocket;
 use tracing::error;
 
 use crate::{
-    config::Config,
+    config::{Config, UpstreamVariant},
     error::Error,
-    proxy::{http::HttpProxy, Proxy},
+    proxy::{http::HttpProxy, udp::UdpProxy, Proxy},
 };
 
 pub struct App {
@@ -47,15 +47,20 @@ impl App {
 
         let mut boot_strap = cfg.boot_strap_addr;
         let boot_strap = boot_strap.pop().unwrap().to_socket_addrs()?.next().unwrap();
-        let client = try_iter(cfg.upstream_addr.into_iter(), |addr| {
-            HttpProxy::try_from_string(addr, boot_strap)
+        let proxy = try_iter(cfg.upstream_addr.into_iter(), |addr| async move {
+            match addr {
+                UpstreamVariant::Https(uri) => HttpProxy::try_from_uri(uri, boot_strap)
+                    .await
+                    .map(|p| Box::new(p) as _),
+                UpstreamVariant::Udp(addr) => UdpProxy::try_from_addr(addr)
+                    .await
+                    .map(|p| Box::new(p) as _),
+                _ => todo!("DoT is not supported yet!"),
+            }
         })
         .await?;
 
-        Ok(Arc::new(Self {
-            listener,
-            proxy: Box::new(client),
-        }))
+        Ok(Arc::new(Self { listener, proxy }))
     }
 
     async fn forward(&self, buf: Vec<u8>, addr: SocketAddr) -> Result<(), Error> {

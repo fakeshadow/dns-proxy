@@ -50,17 +50,12 @@ impl Proxy for HttpProxy {
 
             let mut res = req.body(buf).send().await?;
 
-            debug!(
-                "forward dns query outcome. status_code: {:?}, headers: {:?}",
-                res.status(),
-                res.headers()
-            );
-
             if res.status() != 200 {
                 use std::{error, fmt};
 
                 #[derive(Debug)]
                 struct HttpError {
+                    uri: Uri,
                     status: u16,
                     headers: HeaderMap,
                     body_string: String,
@@ -70,7 +65,8 @@ impl Proxy for HttpProxy {
                     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                         write!(
                             f,
-                            "doh server error response status: {}, headers: {:?}, body: {}",
+                            "{:?} proxy error response {{ status: {:?}, headers: {:?}, body: {:?} }}",
+                            &self.uri,
                             self.status,
                             &self.headers,
                             self.body_string.as_str()
@@ -86,11 +82,19 @@ impl Proxy for HttpProxy {
                 let body_string = res.string().await?;
 
                 return Err(Box::new(HttpError {
+                    uri: self.uri.clone(),
                     status,
                     headers,
                     body_string,
                 }) as _);
             }
+
+            debug!(
+                "{:?} proxy response {{ status: {:?}, headers: {:?} }}",
+                &self.uri,
+                res.status(),
+                res.headers()
+            );
 
             res.body().await.map_err(Error::from)
         })

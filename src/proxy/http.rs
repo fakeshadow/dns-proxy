@@ -1,6 +1,7 @@
 use std::{convert::TryFrom, net::SocketAddr};
 
 use futures_core::future::BoxFuture;
+use tokio::net::UdpSocket;
 use tracing::debug;
 use xitca_client::{
     http::{
@@ -127,24 +128,31 @@ impl Resolve for BootstrapResolver {
 
             dns_packet.write(&mut dns_buf)?;
 
-            let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
+            let socket = UdpSocket::bind("0.0.0.0:0").await?;
             socket.connect(self.boot_strap_addr).await?;
             socket.send(dns_buf.as_slice()).await?;
 
             let len = socket.recv(&mut buf).await?;
-            let mut reader = DnsBuf::new(&mut buf[..len]);
-            let dns_packet = DnsPacket::from_buf(&mut reader)?;
+            let mut dns_buf = DnsBuf::new(&mut buf[..len]);
 
-            let mut res = Vec::new();
+            let mut dns_packet = DnsPacket::new();
+            dns_packet.read(&mut dns_buf)?;
 
-            for answer in dns_packet.answers {
-                debug!("http-client resolved to dns record: {:?}", answer);
-                match answer {
-                    DnsRecord::A { addr, .. } => res.push((addr, port).into()),
-                    DnsRecord::AAAA { addr, .. } => res.push((addr, port).into()),
-                    record => debug!("dns record: {:?} is not supported!", record),
-                }
-            }
+            let res = dns_packet
+                .answers
+                .into_iter()
+                .filter_map(|answer| {
+                    debug!("http-client resolved to dns record: {:?}", answer);
+                    match answer {
+                        DnsRecord::A { addr, .. } => Some((addr, port).into()),
+                        DnsRecord::AAAA { addr, .. } => Some((addr, port).into()),
+                        record => {
+                            debug!("dns record: {:?} is not supported!", record);
+                            None
+                        }
+                    }
+                })
+                .collect();
 
             Ok(res)
         })

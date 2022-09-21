@@ -181,9 +181,7 @@ impl<'a> DnsBuf<'a> {
 
     fn set_u16(&mut self, pos: usize, val: u16) -> io::Result<()> {
         self.set(pos, (val >> 8) as u8)?;
-        self.set(pos + 1, (val & 0xFF) as u8)?;
-
-        Ok(())
+        self.set(pos + 1, (val & 0xFF) as u8)
     }
 }
 
@@ -250,10 +248,10 @@ impl DnsHeader {
         }
     }
 
-    pub fn read(&mut self, buffer: &mut DnsBuf<'_>) -> io::Result<()> {
-        self.id = buffer.read_u16()?;
+    pub fn read(&mut self, buf: &mut DnsBuf<'_>) -> io::Result<()> {
+        self.id = buf.read_u16()?;
 
-        let flags = buffer.read_u16()?;
+        let flags = buf.read_u16()?;
         let a = (flags >> 8) as u8;
         let b = (flags & 0xFF) as u8;
         self.recursion_desired = (a & (1 << 0)) > 0;
@@ -268,19 +266,19 @@ impl DnsHeader {
         self.z = (b & (1 << 6)) > 0;
         self.recursion_available = (b & (1 << 7)) > 0;
 
-        self.questions = buffer.read_u16()?;
-        self.answers = buffer.read_u16()?;
-        self.authoritative_entries = buffer.read_u16()?;
-        self.resource_entries = buffer.read_u16()?;
+        self.questions = buf.read_u16()?;
+        self.answers = buf.read_u16()?;
+        self.authoritative_entries = buf.read_u16()?;
+        self.resource_entries = buf.read_u16()?;
 
         // Return the constant header size
         Ok(())
     }
 
-    pub fn write(&self, buffer: &mut DnsBuf<'_>) -> io::Result<()> {
-        buffer.write_u16(self.id)?;
+    pub fn write(&self, buf: &mut DnsBuf<'_>) -> io::Result<()> {
+        buf.write_u16(self.id)?;
 
-        (buffer.write_u8(
+        (buf.write_u8(
             (self.recursion_desired as u8)
                 | ((self.truncated_message as u8) << 1)
                 | ((self.authoritative_answer as u8) << 2)
@@ -288,7 +286,7 @@ impl DnsHeader {
                 | ((self.response as u8) << 7) as u8,
         ))?;
 
-        (buffer.write_u8(
+        (buf.write_u8(
             (self.rescode as u8)
                 | ((self.checking_disabled as u8) << 4)
                 | ((self.authed_data as u8) << 5)
@@ -296,12 +294,10 @@ impl DnsHeader {
                 | ((self.recursion_available as u8) << 7),
         ))?;
 
-        buffer.write_u16(self.questions)?;
-        buffer.write_u16(self.answers)?;
-        buffer.write_u16(self.authoritative_entries)?;
-        buffer.write_u16(self.resource_entries)?;
-
-        Ok(())
+        buf.write_u16(self.questions)?;
+        buf.write_u16(self.answers)?;
+        buf.write_u16(self.authoritative_entries)?;
+        buf.write_u16(self.resource_entries)
     }
 }
 
@@ -350,10 +346,10 @@ impl DnsQuestion {
         Self { name, qtype }
     }
 
-    pub fn read(&mut self, buffer: &mut DnsBuf) -> io::Result<()> {
-        buffer.read_qname(&mut self.name)?;
-        self.qtype = QueryType::from_num(buffer.read_u16()?); // qtype
-        let _ = buffer.read_u16()?; // class
+    pub fn read(&mut self, buf: &mut DnsBuf) -> io::Result<()> {
+        buf.read_qname(&mut self.name)?;
+        self.qtype = QueryType::from_num(buf.read_u16()?); // qtype
+        let _ = buf.read_u16()?; // class
 
         Ok(())
     }
@@ -613,51 +609,50 @@ impl DnsPacket {
         }
     }
 
-    pub fn from_buf(buffer: &mut DnsBuf) -> io::Result<DnsPacket> {
-        let mut result = DnsPacket::new();
-        result.header.read(buffer)?;
+    pub fn read(&mut self, buf: &mut DnsBuf) -> io::Result<()> {
+        self.header.read(buf)?;
 
-        for _ in 0..result.header.questions {
+        for _ in 0..self.header.questions {
             let mut question = DnsQuestion::new("".to_string(), QueryType::UNKNOWN(0));
-            question.read(buffer)?;
-            result.questions.push(question);
+            question.read(buf)?;
+            self.questions.push(question);
         }
 
-        for _ in 0..result.header.answers {
-            let rec = DnsRecord::read(buffer)?;
-            result.answers.push(rec);
+        for _ in 0..self.header.answers {
+            let rec = DnsRecord::read(buf)?;
+            self.answers.push(rec);
         }
-        for _ in 0..result.header.authoritative_entries {
-            let rec = DnsRecord::read(buffer)?;
-            result.authorities.push(rec);
+        for _ in 0..self.header.authoritative_entries {
+            let rec = DnsRecord::read(buf)?;
+            self.authorities.push(rec);
         }
-        for _ in 0..result.header.resource_entries {
-            let rec = DnsRecord::read(buffer)?;
-            result.resources.push(rec);
+        for _ in 0..self.header.resource_entries {
+            let rec = DnsRecord::read(buf)?;
+            self.resources.push(rec);
         }
 
-        Ok(result)
+        Ok(())
     }
 
-    pub fn write(&mut self, buffer: &mut DnsBuf) -> io::Result<()> {
+    pub fn write(&mut self, buf: &mut DnsBuf) -> io::Result<()> {
         self.header.questions = self.questions.len() as u16;
         self.header.answers = self.answers.len() as u16;
         self.header.authoritative_entries = self.authorities.len() as u16;
         self.header.resource_entries = self.resources.len() as u16;
 
-        self.header.write(buffer)?;
+        self.header.write(buf)?;
 
         for question in &self.questions {
-            question.write(buffer)?;
+            question.write(buf)?;
         }
         for rec in &self.answers {
-            rec.write(buffer)?;
+            rec.write(buf)?;
         }
         for rec in &self.authorities {
-            rec.write(buffer)?;
+            rec.write(buf)?;
         }
         for rec in &self.resources {
-            rec.write(buffer)?;
+            rec.write(buf)?;
         }
 
         Ok(())

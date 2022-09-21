@@ -11,7 +11,7 @@ use tracing::error;
 use crate::{
     config::{Config, UpstreamVariant},
     error::Error,
-    proxy::{http::HttpProxy, udp::UdpProxy, Proxy},
+    proxy::{http::HttpProxy, tls::TlsProxy, udp::UdpProxy, Proxy},
 };
 
 pub struct App {
@@ -55,7 +55,9 @@ impl App {
                 UpstreamVariant::Udp(addr) => UdpProxy::try_from_addr(addr)
                     .await
                     .map(|p| Box::new(p) as _),
-                _ => todo!("DoT is not supported yet!"),
+                UpstreamVariant::Tls(addr) => TlsProxy::try_from_addr(addr)
+                    .await
+                    .map(|p| Box::new(p) as _),
             }
         })
         .await?;

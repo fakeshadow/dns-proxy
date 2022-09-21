@@ -1,3 +1,6 @@
+#![forbid(unsafe_code)]
+#![feature(type_alias_impl_trait)]
+
 mod app;
 mod config;
 mod dns;

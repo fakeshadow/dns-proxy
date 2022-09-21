@@ -2,7 +2,9 @@
 
 ## Features
 
-- DoH(DNS over HTTPS) dns proxy.
+- UDP proxy.
+- DoT(DNS over TLS) proxy.
+- DoH(DNS over HTTPS) proxy.
 
 ## Requirement
 

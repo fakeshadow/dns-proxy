@@ -25,7 +25,7 @@ impl UdpProxy {
 }
 
 impl Proxy for UdpProxy {
-    fn proxy(&self, mut buf: Vec<u8>) -> BoxFuture<'_, Result<Vec<u8>, Error>> {
+    fn proxy(&self, buf: Box<[u8]>) -> BoxFuture<'_, Result<Vec<u8>, Error>> {
         Box::pin(async move {
             let _permit = self.permit.acquire().await?;
 
@@ -34,7 +34,8 @@ impl Proxy for UdpProxy {
 
             socket.send(&buf).await?;
 
-            buf.clear();
+            let mut buf = vec![0; 512];
+
             let n = socket.recv(&mut buf).await?;
 
             let _ = buf.split_off(n);

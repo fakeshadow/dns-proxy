@@ -39,7 +39,7 @@ impl HttpProxy {
 }
 
 impl Proxy for HttpProxy {
-    fn proxy(&self, buf: Vec<u8>) -> BoxFuture<'_, Result<Vec<u8>, Error>> {
+    fn proxy(&self, buf: Box<[u8]>) -> BoxFuture<'_, Result<Vec<u8>, Error>> {
         Box::pin(async move {
             let mut req = self.cli.post(self.uri.clone())?;
 

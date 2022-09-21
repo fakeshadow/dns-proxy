@@ -29,7 +29,7 @@ impl App {
             match app.listener.recv_from(&mut buf).await {
                 Ok((len, addr)) => {
                     let app = app.clone();
-                    let buf = Vec::from(&buf[..len]);
+                    let buf = (&buf[..len]).into();
                     tokio::spawn(async move {
                         if let Err(e) = app.forward(buf, addr).await {
                             error!("forwarding dns lookup error: {}", e)
@@ -63,7 +63,7 @@ impl App {
         Ok(Arc::new(Self { listener, proxy }))
     }
 
-    async fn forward(&self, buf: Vec<u8>, addr: SocketAddr) -> Result<(), Error> {
+    async fn forward(&self, buf: Box<[u8]>, addr: SocketAddr) -> Result<(), Error> {
         let res = self.proxy.proxy(buf).await?;
         self.listener.send_to(res.as_slice(), addr).await?;
         Ok(())

@@ -25,7 +25,7 @@ fn main() {
 }
 
 fn run(cfg: Config) -> Result<(), Error> {
-    info!("starting dns-proxy with configration: {:?}", cfg);
+    info!("starting dns-proxy with configuration: {:?}", cfg);
 
     let mut rt = tokio::runtime::Builder::new_multi_thread();
 

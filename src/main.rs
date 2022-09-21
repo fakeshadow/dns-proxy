@@ -27,8 +27,11 @@ fn main() {
 fn run(cfg: Config) -> Result<(), Error> {
     info!("starting dns-proxy with configration: {:?}", cfg);
 
-    tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?
-        .block_on(App::run(cfg))
+    let mut rt = tokio::runtime::Builder::new_multi_thread();
+
+    if let Some(count) = cfg.thread_count {
+        rt.worker_threads(count);
+    }
+
+    rt.enable_all().build()?.block_on(App::run(cfg))
 }

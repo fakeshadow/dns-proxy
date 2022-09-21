@@ -14,11 +14,19 @@ pub struct Config {
     pub upstream_addr: Vec<UpstreamVariant>,
     pub boot_strap_addr: Vec<SocketAddr>,
     pub log_level: Level,
+    pub thread_count: Option<usize>,
 }
 
 #[cold]
 #[inline(never)]
 pub fn parse_arg() -> Config {
+    let thread_count = short('t')
+        .long("thread")
+        .help("OS thread count dns-proxy would spawn and opperate on in parralell")
+        .argument("THREAD")
+        .parse(|s| s.parse::<usize>().map(Some))
+        .fallback(None);
+
     let listen_addr = short('l')
         .long("listen")
         .help("Local listening address for proxy")
@@ -59,7 +67,8 @@ pub fn parse_arg() -> Config {
         listen_addr,
         upstream_addr,
         boot_strap_addr,
-        log_level
+        log_level,
+        thread_count
     })
     .to_options()
     .run()

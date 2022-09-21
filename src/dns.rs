@@ -129,38 +129,26 @@ impl<'a> DnsBuf<'a> {
     }
 
     fn write_u8(&mut self, val: u8) -> io::Result<()> {
-        self.write(val)?;
-
-        Ok(())
+        self.write(val)
     }
 
     fn write_u16(&mut self, val: u16) -> io::Result<()> {
         self.write((val >> 8) as u8)?;
-        self.write((val & 0xFF) as u8)?;
-
-        Ok(())
+        self.write((val & 0xFF) as u8)
     }
 
     fn write_u32(&mut self, val: u32) -> io::Result<()> {
         self.write(((val >> 24) & 0xFF) as u8)?;
         self.write(((val >> 16) & 0xFF) as u8)?;
         self.write(((val >> 8) & 0xFF) as u8)?;
-        self.write((val & 0xFF) as u8)?;
-
-        Ok(())
+        self.write((val & 0xFF) as u8)
     }
 
     fn write_qname(&mut self, qname: &str) -> io::Result<()> {
-        let split_str = qname.split('.').collect::<Vec<&str>>();
-
-        for label in split_str {
+        for label in qname.split('.') {
             let len = label.len();
-            if len > 0x34 {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "Single label exceeds 63 characters of length",
-                ));
-            }
+
+            label_len_check(len)?;
 
             self.write_u8(len as u8)?;
             for b in label.as_bytes() {
@@ -168,21 +156,30 @@ impl<'a> DnsBuf<'a> {
             }
         }
 
-        self.write_u8(0)?;
-
-        Ok(())
+        self.write_u8(0)
     }
 
-    fn set(&mut self, pos: usize, val: u8) -> io::Result<()> {
+    fn set(&mut self, pos: usize, val: u8) {
         self.buf[pos] = val;
-
-        Ok(())
     }
 
-    fn set_u16(&mut self, pos: usize, val: u16) -> io::Result<()> {
-        self.set(pos, (val >> 8) as u8)?;
+    fn set_u16(&mut self, pos: usize, val: u16) {
+        self.set(pos, (val >> 8) as u8);
         self.set(pos + 1, (val & 0xFF) as u8)
     }
+}
+
+#[cold]
+#[inline(never)]
+fn label_len_check(len: usize) -> io::Result<()> {
+    if len > 0x34 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Single label exceeds 63 characters of length",
+        ));
+    }
+
+    Ok(())
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -354,14 +351,12 @@ impl DnsQuestion {
         Ok(())
     }
 
-    pub fn write(&self, buffer: &mut DnsBuf) -> io::Result<()> {
-        buffer.write_qname(&self.name)?;
+    pub fn write(&self, buf: &mut DnsBuf) -> io::Result<()> {
+        buf.write_qname(&self.name)?;
 
         let typenum = self.qtype.to_num();
-        buffer.write_u16(typenum)?;
-        buffer.write_u16(1)?;
-
-        Ok(())
+        buf.write_u16(typenum)?;
+        buf.write_u16(1)
     }
 }
 
@@ -403,19 +398,19 @@ pub enum DnsRecord {
 }
 
 impl DnsRecord {
-    pub fn read(buffer: &mut DnsBuf) -> io::Result<DnsRecord> {
+    pub fn read(buf: &mut DnsBuf) -> io::Result<DnsRecord> {
         let mut domain = String::new();
-        buffer.read_qname(&mut domain)?;
+        buf.read_qname(&mut domain)?;
 
-        let qtype_num = buffer.read_u16()?;
+        let qtype_num = buf.read_u16()?;
         let qtype = QueryType::from_num(qtype_num);
-        let _ = buffer.read_u16()?;
-        let ttl = buffer.read_u32()?;
-        let data_len = buffer.read_u16()?;
+        let _ = buf.read_u16()?;
+        let ttl = buf.read_u32()?;
+        let data_len = buf.read_u16()?;
 
         match qtype {
             QueryType::A => {
-                let raw_addr = buffer.read_u32()?;
+                let raw_addr = buf.read_u32()?;
                 let addr = Ipv4Addr::new(
                     ((raw_addr >> 24) & 0xFF) as u8,
                     ((raw_addr >> 16) & 0xFF) as u8,
@@ -426,10 +421,10 @@ impl DnsRecord {
                 Ok(DnsRecord::A { domain, addr, ttl })
             }
             QueryType::AAAA => {
-                let raw_addr1 = buffer.read_u32()?;
-                let raw_addr2 = buffer.read_u32()?;
-                let raw_addr3 = buffer.read_u32()?;
-                let raw_addr4 = buffer.read_u32()?;
+                let raw_addr1 = buf.read_u32()?;
+                let raw_addr2 = buf.read_u32()?;
+                let raw_addr3 = buf.read_u32()?;
+                let raw_addr4 = buf.read_u32()?;
                 let addr = Ipv6Addr::new(
                     ((raw_addr1 >> 16) & 0xFFFF) as u16,
                     (raw_addr1 & 0xFFFF) as u16,
@@ -445,7 +440,7 @@ impl DnsRecord {
             }
             QueryType::NS => {
                 let mut ns = String::new();
-                buffer.read_qname(&mut ns)?;
+                buf.read_qname(&mut ns)?;
 
                 Ok(DnsRecord::NS {
                     domain,
@@ -455,7 +450,7 @@ impl DnsRecord {
             }
             QueryType::CNAME => {
                 let mut cname = String::new();
-                buffer.read_qname(&mut cname)?;
+                buf.read_qname(&mut cname)?;
 
                 Ok(DnsRecord::CNAME {
                     domain,
@@ -464,9 +459,9 @@ impl DnsRecord {
                 })
             }
             QueryType::MX => {
-                let priority = buffer.read_u16()?;
+                let priority = buf.read_u16()?;
                 let mut mx = String::new();
-                buffer.read_qname(&mut mx)?;
+                buf.read_qname(&mut mx)?;
 
                 Ok(DnsRecord::MX {
                     domain,
@@ -476,7 +471,7 @@ impl DnsRecord {
                 })
             }
             QueryType::UNKNOWN(_) => {
-                buffer.step(data_len as usize);
+                buf.step(data_len as usize);
 
                 Ok(DnsRecord::UNKNOWN {
                     domain,
@@ -488,8 +483,8 @@ impl DnsRecord {
         }
     }
 
-    pub fn write(&self, buffer: &mut DnsBuf) -> io::Result<usize> {
-        let start_pos = buffer.pos;
+    pub fn write(&self, buf: &mut DnsBuf) -> io::Result<usize> {
+        let start_pos = buf.pos;
 
         match *self {
             DnsRecord::A {
@@ -497,53 +492,53 @@ impl DnsRecord {
                 ref addr,
                 ttl,
             } => {
-                buffer.write_qname(domain)?;
-                buffer.write_u16(QueryType::A.to_num())?;
-                buffer.write_u16(1)?;
-                buffer.write_u32(ttl)?;
-                buffer.write_u16(4)?;
+                buf.write_qname(domain)?;
+                buf.write_u16(QueryType::A.to_num())?;
+                buf.write_u16(1)?;
+                buf.write_u32(ttl)?;
+                buf.write_u16(4)?;
 
                 let octets = addr.octets();
-                buffer.write_u8(octets[0])?;
-                buffer.write_u8(octets[1])?;
-                buffer.write_u8(octets[2])?;
-                buffer.write_u8(octets[3])?;
+                buf.write_u8(octets[0])?;
+                buf.write_u8(octets[1])?;
+                buf.write_u8(octets[2])?;
+                buf.write_u8(octets[3])?;
             }
             DnsRecord::NS {
                 ref domain,
                 ref host,
                 ttl,
             } => {
-                buffer.write_qname(domain)?;
-                buffer.write_u16(QueryType::NS.to_num())?;
-                buffer.write_u16(1)?;
-                buffer.write_u32(ttl)?;
+                buf.write_qname(domain)?;
+                buf.write_u16(QueryType::NS.to_num())?;
+                buf.write_u16(1)?;
+                buf.write_u32(ttl)?;
 
-                let pos = buffer.pos;
-                buffer.write_u16(0)?;
+                let pos = buf.pos;
+                buf.write_u16(0)?;
 
-                buffer.write_qname(host)?;
+                buf.write_qname(host)?;
 
-                let size = buffer.pos - (pos + 2);
-                buffer.set_u16(pos, size as u16)?;
+                let size = buf.pos - (pos + 2);
+                buf.set_u16(pos, size as u16);
             }
             DnsRecord::CNAME {
                 ref domain,
                 ref host,
                 ttl,
             } => {
-                buffer.write_qname(domain)?;
-                buffer.write_u16(QueryType::CNAME.to_num())?;
-                buffer.write_u16(1)?;
-                buffer.write_u32(ttl)?;
+                buf.write_qname(domain)?;
+                buf.write_u16(QueryType::CNAME.to_num())?;
+                buf.write_u16(1)?;
+                buf.write_u32(ttl)?;
 
-                let pos = buffer.pos;
-                buffer.write_u16(0)?;
+                let pos = buf.pos;
+                buf.write_u16(0)?;
 
-                buffer.write_qname(host)?;
+                buf.write_qname(host)?;
 
-                let size = buffer.pos - (pos + 2);
-                buffer.set_u16(pos, size as u16)?;
+                let size = buf.pos - (pos + 2);
+                buf.set_u16(pos, size as u16);
             }
             DnsRecord::MX {
                 ref domain,
@@ -551,33 +546,33 @@ impl DnsRecord {
                 ref host,
                 ttl,
             } => {
-                buffer.write_qname(domain)?;
-                buffer.write_u16(QueryType::MX.to_num())?;
-                buffer.write_u16(1)?;
-                buffer.write_u32(ttl)?;
+                buf.write_qname(domain)?;
+                buf.write_u16(QueryType::MX.to_num())?;
+                buf.write_u16(1)?;
+                buf.write_u32(ttl)?;
 
-                let pos = buffer.pos;
-                buffer.write_u16(0)?;
+                let pos = buf.pos;
+                buf.write_u16(0)?;
 
-                buffer.write_u16(priority)?;
-                buffer.write_qname(host)?;
+                buf.write_u16(priority)?;
+                buf.write_qname(host)?;
 
-                let size = buffer.pos - (pos + 2);
-                buffer.set_u16(pos, size as u16)?;
+                let size = buf.pos - (pos + 2);
+                buf.set_u16(pos, size as u16);
             }
             DnsRecord::AAAA {
                 ref domain,
                 ref addr,
                 ttl,
             } => {
-                buffer.write_qname(domain)?;
-                buffer.write_u16(QueryType::AAAA.to_num())?;
-                buffer.write_u16(1)?;
-                buffer.write_u32(ttl)?;
-                buffer.write_u16(16)?;
+                buf.write_qname(domain)?;
+                buf.write_u16(QueryType::AAAA.to_num())?;
+                buf.write_u16(1)?;
+                buf.write_u32(ttl)?;
+                buf.write_u16(16)?;
 
                 for octet in &addr.segments() {
-                    buffer.write_u16(*octet)?;
+                    buf.write_u16(*octet)?;
                 }
             }
             DnsRecord::UNKNOWN { .. } => {
@@ -585,7 +580,7 @@ impl DnsRecord {
             }
         }
 
-        Ok(buffer.pos - start_pos)
+        Ok(buf.pos - start_pos)
     }
 }
 

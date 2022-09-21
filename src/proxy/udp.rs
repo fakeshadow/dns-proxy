@@ -32,6 +32,8 @@ impl Proxy for UdpProxy {
             let socket = UdpSocket::bind("0.0.0.0:0").await?;
             socket.connect(self.addr).await?;
 
+            socket.send(&buf).await?;
+
             buf.clear();
             let n = socket.recv(&mut buf).await?;
 

@@ -40,13 +40,9 @@ pub fn parse_arg() -> Config {
         .argument("UPSTREAM")
         .some("--upstream argment must not be empty. At least one upstream dns server is needed")
         .parse(|addr| {
-            let mut upstream = Vec::new();
-
-            for addr in addr {
-                let addr = addr.parse::<UpstreamVariant>()?;
-                upstream.push(addr);
-            }
-            Ok::<_, <SocketAddr as FromStr>::Err>(upstream)
+            addr.into_iter()
+                .map(|s| s.parse::<UpstreamVariant>())
+                .collect::<Result<Vec<_>, <SocketAddr as FromStr>::Err>>()
         });
 
     let boot_strap_addr = short('b')

@@ -31,8 +31,8 @@ pub fn parse_arg() -> Config {
         .long("listen")
         .help("Local listening address for proxy")
         .argument("LISTEN")
-        .parse(|addr| addr.to_socket_addrs().map(Vec::from_iter))
-        .fallback("0.0.0.0:53".to_socket_addrs().unwrap().collect());
+        .fallback_with::<_, String>(|| Ok("0.0.0.0:53".to_owned()))
+        .parse(|addr| addr.to_socket_addrs().map(Vec::from_iter));
 
     let upstream_addr = short('u')
         .long("upstream")
@@ -49,8 +49,8 @@ pub fn parse_arg() -> Config {
         .long("bootstrap")
         .help("Bootstrap server for resolving DoH upstreams")
         .argument("BOOT_STRAP")
-        .parse(|addr| addr.to_socket_addrs().map(Vec::from_iter))
-        .fallback("1.1.1.1:53".to_socket_addrs().unwrap().collect());
+        .fallback_with::<_, String>(|| Ok("1.1.1.1:53".to_owned()))
+        .parse(|addr| addr.to_socket_addrs().map(Vec::from_iter));
 
     let log_level = short('L')
         .long("log-level")

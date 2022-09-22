@@ -43,7 +43,7 @@ pub fn parse_arg() -> Config {
 
     let boot_strap_addr = short('b')
         .long("bootstrap")
-        .help("Bootstrap server for resolving DoH upstreams")
+        .help("Bootstrap dns for resolving DoT/DoH upstreams")
         .argument("BOOT_STRAP")
         .fallback_with::<_, String>(|| Ok("1.1.1.1:53".to_owned()))
         .parse(|addr| addr.to_socket_addrs().map(Vec::from_iter));

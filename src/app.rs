@@ -49,13 +49,13 @@ impl App {
         let boot_strap = boot_strap.pop().unwrap().to_socket_addrs()?.next().unwrap();
         let proxy = try_iter(cfg.upstream_addr.into_iter(), |addr| async move {
             match addr {
-                UpstreamVariant::Https(uri) => HttpProxy::try_from_uri(uri, boot_strap)
-                    .await
-                    .map(|p| Box::new(p) as _),
                 UpstreamVariant::Udp(addr) => UdpProxy::try_from_addr(addr)
                     .await
                     .map(|p| Box::new(p) as _),
-                UpstreamVariant::Tls(addr) => TlsProxy::try_from_addr(addr)
+                UpstreamVariant::Tls(uri) => TlsProxy::try_from_uri(uri, boot_strap)
+                    .await
+                    .map(|p| Box::new(p) as _),
+                UpstreamVariant::Https(uri) => HttpProxy::try_from_uri(uri, boot_strap)
                     .await
                     .map(|p| Box::new(p) as _),
             }
@@ -74,7 +74,7 @@ impl App {
 
 #[cold]
 #[inline(never)]
-async fn try_iter<I, F, Fut, T, E>(addr: I, func: F) -> Result<T, E>
+pub(crate) async fn try_iter<I, F, Fut, T, E>(addr: I, func: F) -> Result<T, E>
 where
     I: Iterator,
     F: Fn(I::Item) -> Fut,

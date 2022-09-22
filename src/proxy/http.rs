@@ -1,7 +1,6 @@
 use std::{convert::TryFrom, net::SocketAddr};
 
 use futures_core::future::BoxFuture;
-use tokio::net::UdpSocket;
 use tracing::debug;
 use xitca_client::{
     http::{
@@ -11,12 +10,9 @@ use xitca_client::{
     Resolve,
 };
 
-use crate::{
-    dns::{DnsBuf, DnsPacket, DnsQuestion, DnsRecord, QueryType},
-    error::Error,
-};
+use crate::error::Error;
 
-use super::Proxy;
+use super::{udp::udp_resolve, Proxy};
 
 static DNS_MSG_HDR: HeaderValue = HeaderValue::from_static("application/dns-message");
 
@@ -115,45 +111,7 @@ impl Resolve for BootstrapResolver {
         'h: 'f,
     {
         Box::pin(async move {
-            debug!("http-client resolving host: {}", hostname);
-
-            let mut buf = [0; 512];
-
-            let mut dns_buf = DnsBuf::new(&mut buf);
-
-            let mut dns_packet = DnsPacket::new();
-            dns_packet
-                .questions
-                .push(DnsQuestion::new(String::from(hostname), QueryType::A));
-
-            dns_packet.write(&mut dns_buf)?;
-
-            let socket = UdpSocket::bind("0.0.0.0:0").await?;
-            socket.connect(self.boot_strap_addr).await?;
-            socket.send(dns_buf.as_slice()).await?;
-
-            let len = socket.recv(&mut buf).await?;
-            let mut dns_buf = DnsBuf::new(&mut buf[..len]);
-
-            let mut dns_packet = DnsPacket::new();
-            dns_packet.read(&mut dns_buf)?;
-
-            let res = dns_packet
-                .answers
-                .into_iter()
-                .filter_map(|answer| {
-                    debug!("http-client resolved to dns record: {:?}", answer);
-                    match answer {
-                        DnsRecord::A { addr, .. } => Some((addr, port).into()),
-                        DnsRecord::AAAA { addr, .. } => Some((addr, port).into()),
-                        record => {
-                            debug!("dns record: {:?} is not supported!", record);
-                            None
-                        }
-                    }
-                })
-                .collect();
-
+            let res = udp_resolve(self.boot_strap_addr, hostname, port).await?;
             Ok(res)
         })
     }

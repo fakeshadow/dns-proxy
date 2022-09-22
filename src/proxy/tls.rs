@@ -17,7 +17,7 @@ use xitca_io::{
     net::TcpStream,
 };
 
-use crate::error::Error;
+use crate::{error::Error, proxy::udp::udp_resolve};
 
 use super::Proxy;
 
@@ -31,7 +31,7 @@ pub struct TlsProxy {
 }
 
 impl TlsProxy {
-    pub async fn try_from_addr(addr: SocketAddr) -> Result<Self, Error> {
+    pub async fn try_from_uri(uri: String, boot_strap_addr: SocketAddr) -> Result<Self, Error> {
         let mut root_certs = RootCertStore::empty();
         for cert in TLS_SERVER_ROOTS.0 {
             let cert = OwnedTrustAnchor::from_subject_spki_name_constraints(
@@ -50,9 +50,12 @@ impl TlsProxy {
 
         let config = Arc::new(config);
 
-        let stream = TcpStream::connect(addr).await?;
+        let name = uri.as_str().try_into()?;
 
-        let name = ServerName::IpAddress(addr.ip());
+        let addr = udp_resolve(boot_strap_addr, uri.as_str(), 853).await?;
+
+        let stream = crate::app::try_iter(addr.into_iter(), TcpStream::connect).await?;
+
         let stream = connect_tls(config.clone(), name, stream).await?;
 
         Ok(Self {
@@ -97,27 +100,29 @@ impl Proxy for TlsProxy {
             let mut buf = vec![0; 512];
             let mut len = None;
 
-            loop {
+            'read: loop {
                 match stream.read(&mut buf[n..]) {
                     Ok(r) => {
                         n += r;
 
-                        match len {
-                            Some(l) if n == l => {
-                                let _ = buf.split_off(n);
-                                return Ok(buf);
+                        loop {
+                            match len {
+                                Some(l) if n == l => {
+                                    let _ = buf.split_off(n);
+                                    return Ok(buf);
+                                }
+                                None if n > 2 => {
+                                    let remain = buf.split_off(2);
+                                    let l = u16::from_be_bytes(buf.try_into().unwrap());
+                                    len = Some(l as usize);
+                                    n -= 2;
+                                    buf = remain;
+                                }
+                                Some(l) if n > l => unreachable!(
+                                    "tls stream is locked between read and write. this can't be right"
+                                ),
+                                _ => continue 'read,
                             }
-                            None if n > 2 => {
-                                let remain = buf.split_off(2);
-                                let l = u16::from_be_bytes(buf.try_into().unwrap());
-                                len = Some(l as usize);
-                                n -= 2;
-                                buf = remain;
-                            }
-                            Some(l) if n > l => unreachable!(
-                                "tls stream is locked between read and write. this can't be right"
-                            ),
-                            _ => continue,
                         }
                     }
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -185,26 +190,26 @@ impl AsyncIo for TlsStream {
     }
 }
 
-impl io::Read for TlsStream {
+impl Read for TlsStream {
     #[inline]
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        io::Read::read(&mut self.io, buf)
+        Read::read(&mut self.io, buf)
     }
 }
 
-impl io::Write for TlsStream {
+impl Write for TlsStream {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        io::Write::write(&mut self.io, buf)
+        Write::write(&mut self.io, buf)
     }
 
     #[inline]
     fn write_vectored(&mut self, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
-        io::Write::write_vectored(&mut self.io, bufs)
+        Write::write_vectored(&mut self.io, bufs)
     }
 
     #[inline]
     fn flush(&mut self) -> io::Result<()> {
-        io::Write::flush(&mut self.io)
+        Write::flush(&mut self.io)
     }
 }

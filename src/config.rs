@@ -72,9 +72,9 @@ pub fn parse_arg() -> Config {
 
 #[derive(Debug)]
 pub enum UpstreamVariant {
-    Https(String),
     Udp(SocketAddr),
-    Tls(SocketAddr),
+    Tls(String),
+    Https(String),
 }
 
 impl FromStr for UpstreamVariant {
@@ -85,8 +85,8 @@ impl FromStr for UpstreamVariant {
         if s.starts_with("https://") {
             return Ok(Self::Https(String::from(s)));
         }
-        if s.ends_with(":853") {
-            return s.parse().map(Self::Tls);
+        if s.starts_with("tls://") {
+            return Ok(Self::Tls(String::from(s)));
         }
         s.parse().map(Self::Udp)
     }

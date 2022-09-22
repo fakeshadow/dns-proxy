@@ -7,8 +7,11 @@ use std::{
 };
 
 use futures_core::future::BoxFuture;
-use rustls::{ClientConfig, ClientConnection, PrivateKey, RootCertStore, ServerName, StreamOwned};
+use rustls::{
+    ClientConfig, ClientConnection, OwnedTrustAnchor, RootCertStore, ServerName, StreamOwned,
+};
 use tokio::sync::Mutex;
+use webpki_roots::TLS_SERVER_ROOTS;
 use xitca_io::{
     io::{AsyncIo, Interest, Ready},
     net::TcpStream,
@@ -29,12 +32,21 @@ pub struct TlsProxy {
 
 impl TlsProxy {
     pub async fn try_from_addr(addr: SocketAddr) -> Result<Self, Error> {
+        let mut root_certs = RootCertStore::empty();
+        for cert in TLS_SERVER_ROOTS.0 {
+            let cert = OwnedTrustAnchor::from_subject_spki_name_constraints(
+                cert.subject,
+                cert.spki,
+                cert.name_constraints,
+            );
+            let certs = vec![cert].into_iter();
+            root_certs.add_server_trust_anchors(certs);
+        }
+
         let config = ClientConfig::builder()
-            .with_safe_default_cipher_suites()
-            .with_safe_default_kx_groups()
-            .with_safe_default_protocol_versions()?
-            .with_root_certificates(RootCertStore::empty())
-            .with_single_cert(vec![], PrivateKey(vec![]))?;
+            .with_safe_defaults()
+            .with_root_certificates(root_certs)
+            .with_no_client_auth();
 
         let config = Arc::new(config);
 

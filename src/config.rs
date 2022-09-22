@@ -56,7 +56,7 @@ pub fn parse_arg() -> Config {
         .long("log-level")
         .help("Display level of logger: error,warn,info,debug,trace. number 1-5 can be used to represent level in the same order from error to trance")
         .argument("LOG_LEVEL")
-        .parse(|level| level.parse())
+        .from_str::<Level>()
         .fallback(Level::INFO);
 
     construct!(Config {

@@ -12,6 +12,10 @@ use rustls::{
 };
 use tokio::sync::Mutex;
 use webpki_roots::TLS_SERVER_ROOTS;
+use xitca_client::{
+    error::{Error as XitcaClientError, InvalidUri},
+    http::Uri,
+};
 use xitca_io::{
     io::{AsyncIo, Interest, Ready},
     net::TcpStream,
@@ -32,6 +36,15 @@ pub struct TlsProxy {
 
 impl TlsProxy {
     pub async fn try_from_uri(uri: String, boot_strap_addr: SocketAddr) -> Result<Self, Error> {
+        let uri = Uri::try_from(uri)?;
+
+        let hostname = uri
+            .host()
+            .ok_or_else(|| XitcaClientError::from(InvalidUri::MissingHost))?;
+        let port = uri.port_u16().unwrap_or(853);
+
+        let server_name = hostname.try_into()?;
+
         let mut root_certs = RootCertStore::empty();
         for cert in TLS_SERVER_ROOTS.0 {
             let cert = OwnedTrustAnchor::from_subject_spki_name_constraints(
@@ -50,13 +63,11 @@ impl TlsProxy {
 
         let config = Arc::new(config);
 
-        let name = uri.as_str().try_into()?;
-
-        let addr = udp_resolve(boot_strap_addr, uri.as_str(), 853).await?;
+        let addr = udp_resolve(boot_strap_addr, hostname, port).await?;
 
         let stream = crate::app::try_iter(addr.into_iter(), TcpStream::connect).await?;
 
-        let stream = connect_tls(config.clone(), name, stream).await?;
+        let stream = connect_tls(config.clone(), server_name, stream).await?;
 
         Ok(Self {
             config,

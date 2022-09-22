@@ -11,7 +11,7 @@ use tracing::error;
 use crate::{
     config::{Config, UpstreamVariant},
     error::Error,
-    proxy::{http::HttpProxy, tls::TlsProxy, udp::UdpProxy, Proxy},
+    proxy::{udp::UdpProxy, Proxy},
 };
 
 pub struct App {
@@ -46,18 +46,24 @@ impl App {
         let listener = try_iter(cfg.listen_addr.into_iter(), UdpSocket::bind).await?;
 
         let mut boot_strap = cfg.boot_strap_addr;
-        let boot_strap = boot_strap.pop().unwrap().to_socket_addrs()?.next().unwrap();
+        let _boot_strap = boot_strap.pop().unwrap().to_socket_addrs()?.next().unwrap();
         let proxy = try_iter(cfg.upstream_addr.into_iter(), |addr| async move {
             match addr {
                 UpstreamVariant::Udp(addr) => UdpProxy::try_from_addr(addr)
                     .await
                     .map(|p| Box::new(p) as _),
-                UpstreamVariant::Tls(uri) => TlsProxy::try_from_uri(uri, boot_strap)
-                    .await
-                    .map(|p| Box::new(p) as _),
-                UpstreamVariant::Https(uri) => HttpProxy::try_from_uri(uri, boot_strap)
-                    .await
-                    .map(|p| Box::new(p) as _),
+                #[cfg(feature = "tls")]
+                UpstreamVariant::Tls(uri) => {
+                    crate::proxy::tls::TlsProxy::try_from_uri(uri, _boot_strap)
+                        .await
+                        .map(|p| Box::new(p) as _)
+                }
+                #[cfg(feature = "https")]
+                UpstreamVariant::Https(uri) => {
+                    crate::proxy::https::HttpProxy::try_from_uri(uri, _boot_strap)
+                        .await
+                        .map(|p| Box::new(p) as _)
+                }
             }
         })
         .await?;

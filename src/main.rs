@@ -3,6 +3,7 @@
 
 mod app;
 mod config;
+#[cfg(any(feature = "tls", feature = "https"))]
 mod dns;
 mod error;
 mod proxy;

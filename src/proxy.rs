@@ -1,5 +1,8 @@
-pub mod http;
+#[cfg(feature = "https")]
+pub mod https;
+#[cfg(feature = "tls")]
 pub mod tls;
+
 pub mod udp;
 
 use futures_core::future::BoxFuture;

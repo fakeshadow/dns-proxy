@@ -2,12 +2,8 @@ use std::net::SocketAddr;
 
 use futures_core::future::BoxFuture;
 use tokio::{net::UdpSocket, sync::Semaphore};
-use tracing::debug;
 
-use crate::{
-    dns::{DnsBuf, DnsPacket, DnsQuestion, DnsRecord, QueryType},
-    error::Error,
-};
+use crate::error::Error;
 
 use super::Proxy;
 
@@ -49,11 +45,16 @@ impl Proxy for UdpProxy {
     }
 }
 
+#[cfg(any(feature = "tls", feature = "https"))]
 pub(super) async fn udp_resolve(
     boot_strap_addr: SocketAddr,
     hostname: &str,
     port: u16,
 ) -> std::io::Result<Vec<SocketAddr>> {
+    use tracing::debug;
+
+    use crate::dns::{DnsBuf, DnsPacket, DnsQuestion, DnsRecord, QueryType};
+
     debug!("resolving upstream host: {:?}", hostname);
 
     let mut buf = [0; 512];

@@ -38,12 +38,8 @@ pub fn parse_arg() -> Config {
         .long("upstream")
         .help("Upstream server for dns look up")
         .argument("UPSTREAM")
-        .some("--upstream argment must not be empty. At least one upstream dns server is needed")
-        .parse(|addr| {
-            addr.into_iter()
-                .map(|s| s.parse::<UpstreamVariant>())
-                .collect::<Result<Vec<_>, <SocketAddr as FromStr>::Err>>()
-        });
+        .from_str::<UpstreamVariant>()
+        .some("--upstream argment must not be empty. At least one upstream dns server is needed");
 
     let boot_strap_addr = short('b')
         .long("bootstrap")

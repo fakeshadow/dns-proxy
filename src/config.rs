@@ -24,8 +24,8 @@ pub fn parse_arg() -> Config {
         .long("thread")
         .help("OS thread count dns-proxy would spawn and opperate on in parralell")
         .argument("THREAD")
-        .parse(|s| s.parse::<usize>().map(Some))
-        .fallback(None);
+        .from_str::<usize>()
+        .optional();
 
     let listen_addr = short('l')
         .long("listen")

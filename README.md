@@ -13,7 +13,7 @@
 ## Build
 
 ```shell
-$ cargo build --release
+$ cargo build --all-features --release
 ```
 
 ## Usage

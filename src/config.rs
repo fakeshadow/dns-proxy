@@ -22,7 +22,7 @@ pub struct Config {
 pub fn parse_arg() -> Config {
     let thread_count = short('t')
         .long("thread")
-        .help("OS thread count dns-proxy would spawn and opperate on in parralell")
+        .help("OS thread count dns-proxy would spawn and opperate on in parallel")
         .argument::<usize>("THREAD")
         .optional();
 

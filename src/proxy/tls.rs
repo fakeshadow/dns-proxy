@@ -31,9 +31,6 @@ use crate::{error::Error, proxy::udp::udp_resolve};
 
 use super::Proxy;
 
-// TODO: the efficiency of TlsProxy is a big no.
-// To improve one must use async pipelined feature to allow concurrent non blocking read/write
-// of the tls stream.
 pub struct TlsProxy {
     #[allow(dead_code)]
     config: Arc<ClientConfig>,
@@ -122,15 +119,16 @@ impl TlsProxy {
                                         _ => continue 'out,
                                     }
                                 },
-                                Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
                                 Err(_) => break,
                             }
                         }
+
                         if ready.is_writable() {
                             match stream.write(buf_w.chunk()) {
                                 Ok(0) => break,
                                 Ok(n) => buf_w.advance(n),
-                                Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
                                 Err(_) => break,
                             }
                         }

@@ -18,10 +18,10 @@ keywords = [
 # feature for DoH proxy.
 https = ["xitca-client/http2", "xitca-client/rustls"]
 # feature for DoT proxy.
-tls = ["rustls", "webpki-roots", "xitca-client", "xitca-io"]
+tls = ["rustls", "webpki-roots", "xitca-client", "xitca-io", "xitca-unsafe-collection"]
 
 [dependencies]
-bpaf = "0.5.7"
+bpaf = "0.6"
 futures-core = { version = "0.3", default-features = false, features = ["alloc"] }
 tokio = { version = "1", features = ["net", "rt-multi-thread", "sync"] }
 tracing = { version = "0.1.36", default-features = false }
@@ -34,6 +34,7 @@ xitca-client = { version = "0.1", default-features = false, optional = true }
 rustls = { version = "0.20.6", default-features = false, optional = true }
 webpki-roots = { version = "0.22", optional = true }
 xitca-io = { version = "0.1", optional = true }
+xitca-unsafe-collection = { version = "0.1", features = ["bytes"], optional = true }
 
 [patch.crates-io]
 xitca-client = { git = "https://github.com/HFQR/xitca-web" }

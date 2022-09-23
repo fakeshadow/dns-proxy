@@ -5,7 +5,7 @@ use std::{
     vec,
 };
 
-use bpaf::{construct, short, Parser};
+use bpaf::{construct, short, FromUtf8, Parser};
 use tracing::Level;
 
 #[derive(Debug)]
@@ -23,36 +23,33 @@ pub fn parse_arg() -> Config {
     let thread_count = short('t')
         .long("thread")
         .help("OS thread count dns-proxy would spawn and opperate on in parralell")
-        .argument("THREAD")
-        .from_str::<usize>()
+        .argument::<usize>("THREAD")
         .optional();
 
     let listen_addr = short('l')
         .long("listen")
         .help("Local listening address for proxy")
-        .argument("LISTEN")
+        .argument::<String>("LISTEN")
         .fallback_with::<_, String>(|| Ok("0.0.0.0:53".to_owned()))
         .parse(|addr| addr.to_socket_addrs().map(Vec::from_iter));
 
     let upstream_addr = short('u')
         .long("upstream")
         .help("Upstream server for dns look up")
-        .argument("UPSTREAM")
-        .from_str::<UpstreamVariant>()
-        .some("--upstream argment must not be empty. At least one upstream dns server is needed");
+        .argument::<FromUtf8<UpstreamVariant>>("UPSTREAM")
+        .some("--upstream argument must not be empty. At least one upstream dns server is needed");
 
     let boot_strap_addr = short('b')
         .long("bootstrap")
         .help("Bootstrap dns for resolving DoT/DoH upstreams")
-        .argument("BOOT_STRAP")
+        .argument::<String>("BOOT_STRAP")
         .fallback_with::<_, String>(|| Ok("1.1.1.1:53".to_owned()))
         .parse(|addr| addr.to_socket_addrs().map(Vec::from_iter));
 
     let log_level = short('L')
         .long("log-level")
         .help("Display level of logger: error,warn,info,debug,trace. number 1-5 can be used to represent level in the same order from error to trance")
-        .argument("LOG_LEVEL")
-        .from_str::<Level>()
+        .argument::<FromUtf8<Level>>("LOG_LEVEL")
         .fallback(Level::INFO);
 
     construct!(Config {

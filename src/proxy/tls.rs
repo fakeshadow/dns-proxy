@@ -5,13 +5,18 @@ use std::{
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
+    time::Duration,
 };
 
 use futures_core::future::BoxFuture;
 use rustls::{
     ClientConfig, ClientConnection, OwnedTrustAnchor, RootCertStore, ServerName, StreamOwned,
 };
-use tokio::sync::{mpsc, oneshot};
+use tokio::{
+    sync::{mpsc, oneshot},
+    time,
+};
+use tracing::debug;
 use webpki_roots::TLS_SERVER_ROOTS;
 use xitca_client::{
     error::{Error as XitcaClientError, InvalidUri},
@@ -32,23 +37,13 @@ use crate::{error::Error, proxy::udp::udp_resolve};
 use super::Proxy;
 
 pub struct TlsProxy {
-    #[allow(dead_code)]
-    config: Arc<ClientConfig>,
     tx: mpsc::Sender<(Box<[u8]>, oneshot::Sender<Vec<u8>>)>,
 }
 
 impl TlsProxy {
     pub async fn try_from_uri(uri: String, boot_strap_addr: SocketAddr) -> Result<Self, Error> {
-        let uri = Uri::try_from(uri)?;
-
-        let hostname = uri
-            .host()
-            .ok_or_else(|| XitcaClientError::from(InvalidUri::MissingHost))?;
-        let port = uri.port_u16().unwrap_or(853);
-
-        let server_name = hostname.try_into()?;
-
         let mut root_certs = RootCertStore::empty();
+
         for cert in TLS_SERVER_ROOTS.0 {
             let cert = OwnedTrustAnchor::from_subject_spki_name_constraints(
                 cert.subject,
@@ -64,82 +59,171 @@ impl TlsProxy {
             .with_root_certificates(root_certs)
             .with_no_client_auth();
 
-        let config = Arc::new(config);
+        let cfg = Arc::new(config);
 
-        let addr = udp_resolve(boot_strap_addr, hostname, port).await?;
+        let mut stream = connect(uri.as_str(), boot_strap_addr, &cfg).await?;
 
-        let stream = crate::app::try_iter(addr.into_iter(), TcpStream::connect).await?;
-
-        let mut stream = connect_tls(config.clone(), server_name, stream).await?;
-
-        let (tx, mut rx) = mpsc::channel::<(Box<[u8]>, oneshot::Sender<Vec<u8>>)>(256);
+        let (tx, mut rx) = mpsc::channel(256);
 
         tokio::spawn(async move {
-            let mut queue = VecDeque::<oneshot::Sender<Vec<u8>>>::new();
+            while let Err(e) = pipeline_io(&mut stream, &mut rx).await {
+                debug!("{:?} unexpected disconnect: {:?}", uri.as_str(), e);
 
-            let mut buf_r = BytesMut::new();
-            let mut buf_w = BytesMut::new();
-
-            let mut len = None;
-
-            'out: loop {
-                let interest = if buf_w.is_empty() {
-                    Interest::READABLE
-                } else {
-                    Interest::READABLE | Interest::WRITABLE
-                };
-
-                match rx.recv().select(stream.ready(interest)).await {
-                    SelectOutput::A(None) => break,
-                    SelectOutput::A(Some((buf, tx))) => {
-                        let len = (buf.len() as u16).to_be_bytes();
-                        buf_w.extend_from_slice(&len);
-                        buf_w.extend_from_slice(&buf);
-                        queue.push_back(tx);
-                    }
-                    SelectOutput::B(Ok(ready)) => {
-                        if ready.is_readable() {
-                            match read_buf(&mut stream, &mut buf_r) {
-                                Ok(0) => break,
-                                Ok(_) => loop {
-                                    match len {
-                                        Some(l) if buf_r.chunk().len() >= l => {
-                                            let buf = buf_r.split_to(l).to_vec();
-                                            let tx = queue.pop_front().unwrap();
-                                            let _ = tx.send(buf);
-                                            len = None;
-                                        }
-                                        None if buf_r.chunk().len() > 2 => {
-                                            let l = u16::from_be_bytes(
-                                                buf_r.chunk()[..2].try_into().unwrap(),
-                                            );
-                                            len = Some(l as usize);
-                                            buf_r.advance(2);
-                                        }
-                                        _ => continue 'out,
-                                    }
-                                },
-                                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
-                                Err(_) => break,
-                            }
+                'inner: loop {
+                    match connect(uri.as_str(), boot_strap_addr, &cfg).await {
+                        Ok(s) => {
+                            stream = s;
+                            break 'inner;
                         }
-
-                        if ready.is_writable() {
-                            match stream.write(buf_w.chunk()) {
-                                Ok(0) => break,
-                                Ok(n) => buf_w.advance(n),
-                                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
-                                Err(_) => break,
-                            }
+                        Err(e) => {
+                            debug!("{:?} connect error: {:?}", uri.as_str(), e);
+                            time::sleep(Duration::from_secs(1)).await
                         }
                     }
-                    SelectOutput::B(Err(_)) => return,
                 }
             }
         });
 
-        Ok(Self { config, tx })
+        Ok(Self { tx })
     }
+}
+
+async fn pipeline_io(
+    stream: &mut TlsStream,
+    rx: &mut mpsc::Receiver<(Box<[u8]>, oneshot::Sender<Vec<u8>>)>,
+) -> io::Result<()> {
+    let mut ctx = TlsContext::new();
+
+    let mut err = None;
+
+    loop {
+        let interest = if ctx.write_buf.is_empty() {
+            Interest::READABLE
+        } else {
+            Interest::READABLE | Interest::WRITABLE
+        };
+
+        match rx.recv().select(stream.ready(interest)).await {
+            // got new pipelined request. write to buffer and move on.
+            SelectOutput::A(Some(msg)) => ctx.encode(msg),
+            // tls stream is ready to be read/write.
+            SelectOutput::B(res) => {
+                let ready = res?;
+                if ready.is_readable() {
+                    try_read(stream, &mut ctx)?;
+                }
+                if ready.is_writable() {
+                    if let Err(e) = try_write(stream, &mut ctx) {
+                        *(&mut err) = Some(e);
+                        break;
+                    }
+                }
+            }
+            // proxy is dropped from app.
+            SelectOutput::A(None) => return Ok(()),
+        }
+    }
+
+    while !ctx.queue.is_empty() {
+        stream.ready(Interest::READABLE).await?;
+
+        if let Err(e) = try_read(stream, &mut ctx) {
+            *(&mut err) = Some(e);
+            break;
+        }
+    }
+
+    match err {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
+}
+
+fn try_read(stream: &mut TlsStream, ctx: &mut TlsContext) -> io::Result<()> {
+    match read_buf(stream, &mut ctx.read_buf) {
+        // remote closed read. treat as error.
+        Ok(0) => return Err(io::ErrorKind::ConnectionAborted.into()),
+        Ok(_) => ctx.decode(),
+        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
+        Err(e) => return Err(e),
+    }
+    Ok(())
+}
+
+fn try_write(stream: &mut TlsStream, ctx: &mut TlsContext) -> io::Result<()> {
+    match stream.write(ctx.write_buf.chunk()) {
+        // remote closed write. treat as error.
+        Ok(0) => return Err(io::ErrorKind::ConnectionAborted.into()),
+        Ok(n) => ctx.write_buf.advance(n),
+        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
+        Err(e) => return Err(e),
+    }
+    Ok(())
+}
+
+struct TlsContext {
+    len: Option<usize>,
+    read_buf: BytesMut,
+    write_buf: BytesMut,
+    queue: VecDeque<oneshot::Sender<Vec<u8>>>,
+}
+
+impl TlsContext {
+    fn new() -> Self {
+        Self {
+            len: None,
+            read_buf: BytesMut::new(),
+            write_buf: BytesMut::new(),
+            queue: VecDeque::new(),
+        }
+    }
+
+    fn decode(&mut self) {
+        loop {
+            match self.len {
+                Some(l) if self.read_buf.chunk().len() >= l => {
+                    let buf = self.read_buf.split_to(l).to_vec();
+                    let tx = self.queue.pop_front().unwrap();
+                    let _ = tx.send(buf);
+                    self.len = None;
+                }
+                None if self.read_buf.chunk().len() > 2 => {
+                    let l = u16::from_be_bytes(self.read_buf.chunk()[..2].try_into().unwrap());
+                    self.len = Some(l as usize);
+                    self.read_buf.advance(2);
+                }
+                _ => return,
+            }
+        }
+    }
+
+    fn encode(&mut self, (buf, tx): (Box<[u8]>, oneshot::Sender<Vec<u8>>)) {
+        let len = (buf.len() as u16).to_be_bytes();
+        self.write_buf.extend_from_slice(&len);
+        self.write_buf.extend_from_slice(&buf);
+        self.queue.push_back(tx);
+    }
+}
+
+async fn connect(
+    uri: &str,
+    boot_strap_addr: SocketAddr,
+    cfg: &Arc<ClientConfig>,
+) -> Result<TlsStream, Error> {
+    let uri = Uri::try_from(uri.clone())?;
+
+    let hostname = uri
+        .host()
+        .ok_or_else(|| XitcaClientError::from(InvalidUri::MissingHost))?;
+    let port = uri.port_u16().unwrap_or(853);
+
+    let server_name = hostname.try_into()?;
+
+    let addr = udp_resolve(boot_strap_addr, hostname, port).await?;
+
+    let stream = crate::app::try_iter(addr.into_iter(), TcpStream::connect).await?;
+
+    connect_tls(cfg.clone(), server_name, stream).await
 }
 
 impl Proxy for TlsProxy {

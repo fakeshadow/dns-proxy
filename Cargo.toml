@@ -18,7 +18,7 @@ keywords = [
 # feature for DoH proxy.
 https = ["xitca-client/http2", "xitca-client/rustls"]
 # feature for DoT proxy.
-tls = ["rustls", "webpki-roots", "xitca-client", "xitca-io", "xitca-unsafe-collection"]
+tls = ["http", "rustls", "tokio/time", "webpki-roots", "xitca-io", "xitca-unsafe-collection"]
 
 [dependencies]
 bpaf = "0.6"
@@ -31,6 +31,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["e
 xitca-client = { version = "0.1", default-features = false, optional = true }
 
 # optional for DoT.
+http = { version = "0.2.8", optional = true }
 rustls = { version = "0.20.6", default-features = false, features = ["tls12"], optional = true }
 webpki-roots = { version = "0.22", optional = true }
 xitca-io = { version = "0.1", optional = true }

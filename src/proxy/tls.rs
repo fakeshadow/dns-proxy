@@ -1,5 +1,6 @@
 use std::{
     collections::VecDeque,
+    error, fmt,
     io::{self, Read, Write},
     net::SocketAddr,
     pin::Pin,
@@ -9,6 +10,7 @@ use std::{
 };
 
 use futures_core::future::BoxFuture;
+use http::Uri;
 use rustls::{
     ClientConfig, ClientConnection, OwnedTrustAnchor, RootCertStore, ServerName, StreamOwned,
 };
@@ -18,10 +20,6 @@ use tokio::{
 };
 use tracing::debug;
 use webpki_roots::TLS_SERVER_ROOTS;
-use xitca_client::{
-    error::{Error as XitcaClientError, InvalidUri},
-    http::Uri,
-};
 use xitca_io::{
     bytes::{Buf, BytesMut},
     io::{AsyncIo, Interest, Ready},
@@ -210,11 +208,9 @@ async fn connect(
     boot_strap_addr: SocketAddr,
     cfg: &Arc<ClientConfig>,
 ) -> Result<TlsStream, Error> {
-    let uri = Uri::try_from(uri.clone())?;
+    let uri = Uri::try_from(String::from(uri))?;
 
-    let hostname = uri
-        .host()
-        .ok_or_else(|| XitcaClientError::from(InvalidUri::MissingHost))?;
+    let hostname = uri.host().ok_or_else(|| InvalidUri(uri.to_string()))?;
     let port = uri.port_u16().unwrap_or(853);
 
     let server_name = hostname.try_into()?;
@@ -314,3 +310,14 @@ impl Write for TlsStream {
         Write::flush(&mut self.io)
     }
 }
+
+#[derive(Debug)]
+struct InvalidUri(String);
+
+impl fmt::Display for InvalidUri {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} is not valid uri.", self.0)
+    }
+}
+
+impl error::Error for InvalidUri {}

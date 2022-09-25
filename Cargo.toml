@@ -31,7 +31,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["e
 xitca-client = { version = "0.1", default-features = false, optional = true }
 
 # optional for DoT.
-rustls = { version = "0.20.6", default-features = false, optional = true }
+rustls = { version = "0.20.6", default-features = false, features = ["tls12"], optional = true }
 webpki-roots = { version = "0.22", optional = true }
 xitca-io = { version = "0.1", optional = true }
 xitca-unsafe-collection = { version = "0.1", features = ["bytes"], optional = true }

@@ -5,7 +5,7 @@ use std::{
     vec,
 };
 
-use bpaf::{construct, short, FromUtf8, Parser};
+use bpaf::{construct, short, Parser};
 use tracing::Level;
 
 #[derive(Debug)]
@@ -36,7 +36,7 @@ pub fn parse_arg() -> Config {
     let upstream_addr = short('u')
         .long("upstream")
         .help("Upstream server for dns look up")
-        .argument::<FromUtf8<UpstreamVariant>>("UPSTREAM")
+        .argument::<UpstreamVariant>("UPSTREAM")
         .some("--upstream argument must not be empty. At least one upstream dns server is needed");
 
     let boot_strap_addr = short('b')
@@ -49,7 +49,7 @@ pub fn parse_arg() -> Config {
     let log_level = short('L')
         .long("log-level")
         .help("Display level of logger: error,warn,info,debug,trace. number 1-5 can be used to represent level in the same order from error to trance")
-        .argument::<FromUtf8<Level>>("LOG_LEVEL")
+        .argument::<Level>("LOG_LEVEL")
         .fallback(Level::INFO);
 
     construct!(Config {

@@ -21,7 +21,7 @@ https = ["xitca-client/http2", "xitca-client/rustls"]
 tls = ["http", "rustls", "tokio/time", "webpki-roots", "xitca-io", "xitca-unsafe-collection"]
 
 [dependencies]
-bpaf = "0.6"
+bpaf = "0.7"
 futures-core = { version = "0.3", default-features = false, features = ["alloc"] }
 tokio = { version = "1", features = ["net", "rt-multi-thread", "sync"] }
 tracing = { version = "0.1.36", default-features = false }

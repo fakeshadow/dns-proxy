@@ -34,7 +34,7 @@ xitca-client = { version = "0.1", default-features = false, optional = true }
 http = { version = "0.2.8", optional = true }
 rustls = { version = "0.20.6", default-features = false, features = ["tls12"], optional = true }
 webpki-roots = { version = "0.22", optional = true }
-xitca-io = { version = "0.1", optional = true }
+xitca-io = { version = "0.1", features = ["runtime"], optional = true }
 xitca-unsafe-collection = { version = "0.1", features = ["bytes"], optional = true }
 
 [patch.crates-io]

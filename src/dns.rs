@@ -51,7 +51,7 @@ impl<'a> DnsBuf<'a> {
         if start + len >= 512 {
             return Err(eof_err());
         }
-        Ok(&self.buf[start..start + len as usize])
+        Ok(&self.buf[start..start + len])
     }
 
     fn read_u16(&mut self) -> io::Result<u16> {
@@ -280,7 +280,7 @@ impl DnsHeader {
                 | ((self.truncated_message as u8) << 1)
                 | ((self.authoritative_answer as u8) << 2)
                 | (self.opcode << 3)
-                | ((self.response as u8) << 7) as u8,
+                | ((self.response as u8) << 7),
         ))?;
 
         (buf.write_u8(

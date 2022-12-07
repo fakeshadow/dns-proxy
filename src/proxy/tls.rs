@@ -34,8 +34,10 @@ use crate::{error::Error, proxy::udp::udp_resolve};
 
 use super::Proxy;
 
+type Msg = (Box<[u8]>, oneshot::Sender<Vec<u8>>);
+
 pub struct TlsProxy {
-    tx: mpsc::Sender<(Box<[u8]>, oneshot::Sender<Vec<u8>>)>,
+    tx: mpsc::Sender<Msg>,
 }
 
 impl TlsProxy {
@@ -86,13 +88,10 @@ impl TlsProxy {
     }
 }
 
-async fn pipeline_io(
-    stream: &mut TlsStream,
-    rx: &mut mpsc::Receiver<(Box<[u8]>, oneshot::Sender<Vec<u8>>)>,
-) -> io::Result<()> {
+async fn pipeline_io(stream: &mut TlsStream, rx: &mut mpsc::Receiver<Msg>) -> io::Result<()> {
     let mut ctx = TlsContext::new();
 
-    let mut err = None;
+    let err = &mut None;
 
     loop {
         let interest = if ctx.write_buf.is_empty() {
@@ -112,7 +111,7 @@ async fn pipeline_io(
                 }
                 if ready.is_writable() {
                     if let Err(e) = try_write(stream, &mut ctx) {
-                        *(&mut err) = Some(e);
+                        *err = Some(e);
                         break;
                     }
                 }
@@ -126,12 +125,12 @@ async fn pipeline_io(
         stream.ready(Interest::READABLE).await?;
 
         if let Err(e) = try_read(stream, &mut ctx) {
-            *(&mut err) = Some(e);
+            *err = Some(e);
             break;
         }
     }
 
-    match err {
+    match err.take() {
         Some(e) => Err(e),
         None => Ok(()),
     }

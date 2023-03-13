@@ -94,10 +94,10 @@ async fn pipeline_io(stream: &mut TlsStream, rx: &mut mpsc::Receiver<Msg>) -> io
     let err = &mut None;
 
     loop {
-        let interest = if ctx.write_buf.is_empty() {
-            Interest::READABLE
-        } else {
+        let interest = if ctx.buf_write.want_write() {
             Interest::READABLE | Interest::WRITABLE
+        } else {
+            Interest::READABLE
         };
 
         match rx.recv().select(stream.ready(interest)).await {
@@ -110,14 +110,14 @@ async fn pipeline_io(stream: &mut TlsStream, rx: &mut mpsc::Receiver<Msg>) -> io
                     try_read(stream, &mut ctx)?;
                 }
                 if ready.is_writable() {
-                    if let Err(e) = try_write(stream, &mut ctx) {
+                    if let Err(e) = ctx.buf_write.write_io(stream) {
                         *err = Some(e);
                         break;
                     }
                 }
             }
             // proxy is dropped from app.
-            SelectOutput::A(None) => return Ok(()),
+            SelectOutput::A(None) => break,
         }
     }
 
@@ -137,7 +137,7 @@ async fn pipeline_io(stream: &mut TlsStream, rx: &mut mpsc::Receiver<Msg>) -> io
 }
 
 fn try_read(stream: &mut TlsStream, ctx: &mut TlsContext) -> io::Result<()> {
-    match read_buf(stream, &mut ctx.read_buf) {
+    match read_buf(stream, &mut ctx.buf_read) {
         // remote closed read. treat as error.
         Ok(0) => return Err(io::ErrorKind::ConnectionAborted.into()),
         Ok(_) => ctx.decode(),
@@ -147,21 +147,64 @@ fn try_read(stream: &mut TlsStream, ctx: &mut TlsContext) -> io::Result<()> {
     Ok(())
 }
 
-fn try_write(stream: &mut TlsStream, ctx: &mut TlsContext) -> io::Result<()> {
-    match stream.write(ctx.write_buf.chunk()) {
-        // remote closed write. treat as error.
-        Ok(0) => return Err(io::ErrorKind::ConnectionAborted.into()),
-        Ok(n) => ctx.write_buf.advance(n),
-        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
-        Err(e) => return Err(e),
+struct BufWrite {
+    want_flush: bool,
+    buf: BytesMut,
+}
+
+impl Default for BufWrite {
+    fn default() -> Self {
+        Self::new()
     }
-    Ok(())
+}
+
+impl BufWrite {
+    fn new() -> Self {
+        Self {
+            want_flush: false,
+            buf: BytesMut::new(),
+        }
+    }
+
+    fn want_write(&self) -> bool {
+        !self.buf.is_empty() || self.want_flush
+    }
+
+    fn extend_from_slice(&mut self, slice: &[u8]) {
+        self.buf.extend_from_slice(slice);
+        self.want_flush = false;
+    }
+
+    fn write_io<Io: Write>(&mut self, io: &mut Io) -> io::Result<()> {
+        loop {
+            if self.want_flush {
+                match io.flush() {
+                    Ok(_) => self.want_flush = false,
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {}
+                    Err(e) => return Err(e),
+                }
+                break;
+            }
+            match io.write(&self.buf) {
+                Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
+                Ok(n) => {
+                    self.buf.advance(n);
+                    if self.buf.is_empty() {
+                        self.want_flush = true;
+                    }
+                }
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => break,
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
 }
 
 struct TlsContext {
     len: Option<usize>,
-    read_buf: BytesMut,
-    write_buf: BytesMut,
+    buf_read: BytesMut,
+    buf_write: BufWrite,
     queue: VecDeque<oneshot::Sender<Vec<u8>>>,
 }
 
@@ -169,8 +212,8 @@ impl TlsContext {
     fn new() -> Self {
         Self {
             len: None,
-            read_buf: BytesMut::new(),
-            write_buf: BytesMut::new(),
+            buf_read: BytesMut::new(),
+            buf_write: BufWrite::new(),
             queue: VecDeque::new(),
         }
     }
@@ -178,16 +221,16 @@ impl TlsContext {
     fn decode(&mut self) {
         loop {
             match self.len {
-                Some(l) if self.read_buf.chunk().len() >= l => {
-                    let buf = self.read_buf.split_to(l).to_vec();
+                Some(l) if self.buf_read.chunk().len() >= l => {
+                    let buf = self.buf_read.split_to(l).to_vec();
                     let tx = self.queue.pop_front().unwrap();
                     let _ = tx.send(buf);
                     self.len = None;
                 }
-                None if self.read_buf.chunk().len() > 2 => {
-                    let l = u16::from_be_bytes(self.read_buf.chunk()[..2].try_into().unwrap());
+                None if self.buf_read.chunk().len() > 2 => {
+                    let l = u16::from_be_bytes(self.buf_read.chunk()[..2].try_into().unwrap());
                     self.len = Some(l as usize);
-                    self.read_buf.advance(2);
+                    self.buf_read.advance(2);
                 }
                 _ => return,
             }
@@ -196,8 +239,8 @@ impl TlsContext {
 
     fn encode(&mut self, (buf, tx): (Box<[u8]>, oneshot::Sender<Vec<u8>>)) {
         let len = (buf.len() as u16).to_be_bytes();
-        self.write_buf.extend_from_slice(&len);
-        self.write_buf.extend_from_slice(&buf);
+        self.buf_write.extend_from_slice(&len);
+        self.buf_write.extend_from_slice(&buf);
         self.queue.push_back(tx);
     }
 }
@@ -265,10 +308,10 @@ async fn connect_tls(
     }
 }
 impl AsyncIo for TlsStream {
-    type ReadyFuture<'f> = <TcpStream as AsyncIo>::ReadyFuture<'f> where Self: 'f;
+    type Future<'f> = <TcpStream as AsyncIo>::Future<'f> where Self: 'f;
 
     #[inline]
-    fn ready(&self, interest: Interest) -> Self::ReadyFuture<'_> {
+    fn ready(&self, interest: Interest) -> Self::Future<'_> {
         self.io.get_ref().ready(interest)
     }
 

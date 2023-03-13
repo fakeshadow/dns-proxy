@@ -23,16 +23,16 @@ tls = ["http", "rustls", "tokio/time", "webpki-roots", "xitca-io", "xitca-unsafe
 [dependencies]
 bpaf = "0.7"
 futures-core = { version = "0.3", default-features = false, features = ["alloc"] }
-tokio = { version = "1", features = ["net", "rt-multi-thread", "sync"] }
-tracing = { version = "0.1.36", default-features = false }
+tokio = { version = "1.26", features = ["net", "rt-multi-thread", "sync"] }
+tracing = { version = "0.1", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt"] }
 
 # optional for DoH.
 xitca-client = { version = "0.1", default-features = false, optional = true }
 
 # optional for DoT.
-http = { version = "0.2.8", optional = true }
-rustls = { version = "0.20.6", default-features = false, features = ["tls12"], optional = true }
+http = { version = "0.2.9", optional = true }
+rustls = { version = "0.20", default-features = false, features = ["tls12"], optional = true }
 webpki-roots = { version = "0.22", optional = true }
 xitca-io = { version = "0.1", features = ["runtime"], optional = true }
 xitca-unsafe-collection = { version = "0.1", features = ["bytes"], optional = true }

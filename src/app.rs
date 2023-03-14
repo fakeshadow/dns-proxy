@@ -1,5 +1,6 @@
+use core::future::Future;
+
 use std::{
-    future::Future,
     io,
     net::{SocketAddr, ToSocketAddrs},
     sync::Arc,

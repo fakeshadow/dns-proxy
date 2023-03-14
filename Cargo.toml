@@ -38,11 +38,11 @@ xitca-io = { version = "0.1", features = ["runtime"], optional = true }
 xitca-unsafe-collection = { version = "0.1", features = ["bytes"], optional = true }
 
 [patch.crates-io]
-xitca-client = { git = "https://github.com/HFQR/xitca-web" }
-xitca-http = { git = "https://github.com/HFQR/xitca-web" }
-xitca-io = { git = "https://github.com/HFQR/xitca-web" }
-xitca-service = { git = "https://github.com/HFQR/xitca-web" }
-xitca-unsafe-collection = { git = "https://github.com/HFQR/xitca-web" }
+xitca-client = { git = "https://github.com/HFQR/xitca-web", rev = "4b48dd0775f79be5686b32449b27141bb3b6f87f" }
+xitca-http = { git = "https://github.com/HFQR/xitca-web", rev = "4b48dd0775f79be5686b32449b27141bb3b6f87f" }
+xitca-io = { git = "https://github.com/HFQR/xitca-web", rev = "4b48dd0775f79be5686b32449b27141bb3b6f87f" }
+xitca-service = { git = "https://github.com/HFQR/xitca-web", rev = "4b48dd0775f79be5686b32449b27141bb3b6f87f" }
+xitca-unsafe-collection = { git = "https://github.com/HFQR/xitca-web", rev = "4b48dd0775f79be5686b32449b27141bb3b6f87f" }
 
 [profile.release]
 lto = true

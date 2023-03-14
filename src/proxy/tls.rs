@@ -1,12 +1,17 @@
-use std::{
-    collections::VecDeque,
-    error, fmt,
-    io::{self, Read, Write},
-    net::SocketAddr,
+use core::{
+    convert::Infallible,
+    fmt,
     pin::Pin,
-    sync::Arc,
     task::{Context, Poll},
     time::Duration,
+};
+
+use std::{
+    collections::VecDeque,
+    error,
+    io::{self, Read, Write},
+    net::SocketAddr,
+    sync::Arc,
 };
 
 use futures_core::future::BoxFuture;
@@ -21,7 +26,7 @@ use tokio::{
 use tracing::debug;
 use webpki_roots::TLS_SERVER_ROOTS;
 use xitca_io::{
-    bytes::{Buf, BytesMut},
+    bytes::{Buf, BufInterest, BufWrite, BytesMut, WriteBuf},
     io::{AsyncIo, Interest, Ready},
     net::TcpStream,
 };
@@ -91,10 +96,8 @@ impl TlsProxy {
 async fn pipeline_io(stream: &mut TlsStream, rx: &mut mpsc::Receiver<Msg>) -> io::Result<()> {
     let mut ctx = TlsContext::new();
 
-    let err = &mut None;
-
     loop {
-        let interest = if ctx.buf_write.want_write() {
+        let interest = if ctx.buf_write.want_write_io() {
             Interest::READABLE | Interest::WRITABLE
         } else {
             Interest::READABLE
@@ -109,11 +112,8 @@ async fn pipeline_io(stream: &mut TlsStream, rx: &mut mpsc::Receiver<Msg>) -> io
                 if ready.is_readable() {
                     try_read(stream, &mut ctx)?;
                 }
-                if ready.is_writable() {
-                    if let Err(e) = ctx.buf_write.write_io(stream) {
-                        *err = Some(e);
-                        break;
-                    }
+                if ready.is_writable() && try_write(stream, &mut ctx).is_err() {
+                    break;
                 }
             }
             // proxy is dropped from app.
@@ -121,19 +121,25 @@ async fn pipeline_io(stream: &mut TlsStream, rx: &mut mpsc::Receiver<Msg>) -> io
         }
     }
 
-    while !ctx.queue.is_empty() {
-        stream.ready(Interest::READABLE).await?;
-
-        if let Err(e) = try_read(stream, &mut ctx) {
-            *err = Some(e);
-            break;
+    loop {
+        let want_read = !ctx.queue.is_empty();
+        let want_write = ctx.buf_write.want_write_io();
+        let interest = match (want_read, want_write) {
+            (true, true) => Interest::READABLE | Interest::WRITABLE,
+            (true, false) => Interest::READABLE,
+            (false, true) => Interest::WRITABLE,
+            (false, false) => break,
+        };
+        let ready = stream.ready(interest).await?;
+        if ready.is_readable() {
+            try_read(stream, &mut ctx)?;
+        }
+        if ready.is_writable() {
+            let _ = try_write(stream, &mut ctx);
         }
     }
 
-    match err.take() {
-        Some(e) => Err(e),
-        None => Ok(()),
-    }
+    Ok(())
 }
 
 fn try_read(stream: &mut TlsStream, ctx: &mut TlsContext) -> io::Result<()> {
@@ -147,64 +153,17 @@ fn try_read(stream: &mut TlsStream, ctx: &mut TlsContext) -> io::Result<()> {
     Ok(())
 }
 
-struct BufWrite {
-    want_flush: bool,
-    buf: BytesMut,
-}
-
-impl Default for BufWrite {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl BufWrite {
-    fn new() -> Self {
-        Self {
-            want_flush: false,
-            buf: BytesMut::new(),
-        }
-    }
-
-    fn want_write(&self) -> bool {
-        !self.buf.is_empty() || self.want_flush
-    }
-
-    fn extend_from_slice(&mut self, slice: &[u8]) {
-        self.buf.extend_from_slice(slice);
-        self.want_flush = false;
-    }
-
-    fn write_io<Io: Write>(&mut self, io: &mut Io) -> io::Result<()> {
-        loop {
-            if self.want_flush {
-                match io.flush() {
-                    Ok(_) => self.want_flush = false,
-                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {}
-                    Err(e) => return Err(e),
-                }
-                break;
-            }
-            match io.write(&self.buf) {
-                Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
-                Ok(n) => {
-                    self.buf.advance(n);
-                    if self.buf.is_empty() {
-                        self.want_flush = true;
-                    }
-                }
-                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => break,
-                Err(e) => return Err(e),
-            }
-        }
-        Ok(())
-    }
+fn try_write(stream: &mut TlsStream, ctx: &mut TlsContext) -> io::Result<()> {
+    ctx.buf_write.write_io(stream).map_err(|e| {
+        ctx.buf_write.clear();
+        e
+    })
 }
 
 struct TlsContext {
     len: Option<usize>,
     buf_read: BytesMut,
-    buf_write: BufWrite,
+    buf_write: WriteBuf,
     queue: VecDeque<oneshot::Sender<Vec<u8>>>,
 }
 
@@ -213,7 +172,7 @@ impl TlsContext {
         Self {
             len: None,
             buf_read: BytesMut::new(),
-            buf_write: BufWrite::new(),
+            buf_write: WriteBuf::new(),
             queue: VecDeque::new(),
         }
     }
@@ -239,8 +198,11 @@ impl TlsContext {
 
     fn encode(&mut self, (buf, tx): (Box<[u8]>, oneshot::Sender<Vec<u8>>)) {
         let len = (buf.len() as u16).to_be_bytes();
-        self.buf_write.extend_from_slice(&len);
-        self.buf_write.extend_from_slice(&buf);
+        let _ = self.buf_write.write_buf(|b| {
+            b.extend_from_slice(&len);
+            b.extend_from_slice(&buf);
+            Ok::<_, Infallible>(())
+        });
         self.queue.push_back(tx);
     }
 }

@@ -222,7 +222,7 @@ async fn connect(
     let addr = udp_resolve(boot_strap_addr, hostname, port).await?;
 
     let stream = crate::app::try_iter(addr.into_iter(), TcpStream::connect).await?;
-
+    stream.set_nodelay(true)?;
     connect_tls(cfg.clone(), server_name, stream).await
 }
 

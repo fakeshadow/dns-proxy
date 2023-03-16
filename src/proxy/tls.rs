@@ -6,12 +6,12 @@ use core::{
     time::Duration,
 };
 
+use alloc::{collections::VecDeque, sync::Arc};
+
 use std::{
-    collections::VecDeque,
     error,
     io::{self, Read, Write},
     net::SocketAddr,
-    sync::Arc,
 };
 
 use futures_core::future::BoxFuture;

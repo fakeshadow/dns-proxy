@@ -1,9 +1,9 @@
 /// Argument parsing.
-use std::{
-    net::{SocketAddr, ToSocketAddrs},
-    str::FromStr,
-    vec,
-};
+use core::str::FromStr;
+
+use alloc::vec;
+
+use std::net::{SocketAddr, ToSocketAddrs};
 
 use bpaf::{construct, short, Parser};
 use tracing::Level;

@@ -1,7 +1,11 @@
 #![forbid(unsafe_code)]
 #![feature(type_alias_impl_trait)]
 
+extern crate alloc;
+
 mod app;
+#[cfg(feature = "cache")]
+mod cache;
 mod config;
 #[cfg(any(feature = "tls", feature = "https"))]
 mod dns;

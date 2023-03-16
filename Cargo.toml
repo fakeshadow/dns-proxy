@@ -19,11 +19,13 @@ keywords = [
 https = ["xitca-client/http2", "xitca-client/rustls"]
 # feature for DoT proxy.
 tls = ["http", "rustls", "tokio/time", "webpki-roots", "xitca-io", "xitca-unsafe-collection"]
+# feature for simple dns caching.
+cache = []
 
 [dependencies]
 bpaf = "0.7"
 futures-core = { version = "0.3", default-features = false, features = ["alloc"] }
-tokio = { version = "1.26", features = ["net", "rt-multi-thread", "sync"] }
+tokio = { version = "1.26", features = ["net", "rt-multi-thread", "sync", "time"] }
 tracing = { version = "0.1", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt"] }
 
@@ -36,6 +38,9 @@ rustls = { version = "0.20", default-features = false, features = ["tls12"], opt
 webpki-roots = { version = "0.22", optional = true }
 xitca-io = { version = "0.1", features = ["runtime"], optional = true }
 xitca-unsafe-collection = { version = "0.1", features = ["bytes"], optional = true }
+
+[dev-dependencies]
+tokio = { version = "1.26", features = ["macros"] }
 
 [patch.crates-io]
 xitca-client = { git = "https://github.com/HFQR/xitca-web", rev = "4b48dd0775f79be5686b32449b27141bb3b6f87f" }

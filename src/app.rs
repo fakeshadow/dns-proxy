@@ -3,8 +3,9 @@ use core::future::Future;
 use std::{
     io,
     net::{SocketAddr, ToSocketAddrs},
-    sync::Arc,
 };
+
+use alloc::sync::Arc;
 
 use tokio::net::UdpSocket;
 use tracing::error;
@@ -17,6 +18,8 @@ use crate::{
 
 pub struct App {
     listener: UdpSocket,
+    #[cfg(feature = "cache")]
+    cache: crate::cache::Cache,
     proxy: Box<dyn Proxy>,
 }
 
@@ -69,12 +72,28 @@ impl App {
         })
         .await?;
 
-        Ok(Arc::new(Self { listener, proxy }))
+        Ok(Arc::new(Self {
+            listener,
+            #[cfg(feature = "cache")]
+            cache: crate::cache::Cache::new(),
+            proxy,
+        }))
     }
 
     async fn forward(&self, buf: Box<[u8]>, addr: SocketAddr) -> Result<(), Error> {
+        #[cfg(feature = "cache")]
+        let res = match self.cache.try_get(&buf).await {
+            Some(buf) => buf,
+            None => {
+                let res = self.proxy.proxy(buf.clone()).await?;
+                self.cache.set(buf, res.into()).await
+            }
+        };
+
+        #[cfg(not(feature = "cache"))]
         let res = self.proxy.proxy(buf).await?;
-        self.listener.send_to(res.as_slice(), addr).await?;
+
+        self.listener.send_to(&res, addr).await?;
         Ok(())
     }
 }

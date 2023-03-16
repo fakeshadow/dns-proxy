@@ -13,7 +13,7 @@
 ## Build
 
 ```shell
-$ cargo build --all-features --release
+$ cargo build --features https,tls --release
 ```
 
 ## Usage

@@ -143,14 +143,15 @@ async fn pipeline_io(stream: &mut TlsStream, rx: &mut mpsc::Receiver<Msg>) -> io
 }
 
 fn try_read(stream: &mut TlsStream, ctx: &mut TlsContext) -> io::Result<()> {
-    match read_buf(stream, &mut ctx.buf_read) {
-        // remote closed read. treat as error.
-        Ok(0) => return Err(io::ErrorKind::ConnectionAborted.into()),
-        Ok(_) => ctx.decode(),
-        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
-        Err(e) => return Err(e),
+    loop {
+        match read_buf(stream, &mut ctx.buf_read) {
+            // remote closed read. treat as error.
+            Ok(0) => return Err(io::ErrorKind::ConnectionAborted.into()),
+            Ok(_) => ctx.decode(),
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(()),
+            Err(e) => return Err(e),
+        }
     }
-    Ok(())
 }
 
 fn try_write(stream: &mut TlsStream, ctx: &mut TlsContext) -> io::Result<()> {

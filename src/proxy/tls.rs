@@ -23,7 +23,7 @@ use tokio::{
     sync::{mpsc, oneshot},
     time,
 };
-use tracing::debug;
+use tracing::{error, trace};
 use webpki_roots::TLS_SERVER_ROOTS;
 use xitca_io::{
     bytes::{Buf, BufInterest, BufWrite, BytesMut, WriteBuf},
@@ -47,6 +47,14 @@ pub struct TlsProxy {
 
 impl TlsProxy {
     pub async fn try_from_uri(uri: String, boot_strap_addr: SocketAddr) -> Result<Self, Error> {
+        let uri = Uri::try_from(uri)?;
+
+        let hostname = uri.host().ok_or_else(|| InvalidUri(uri.to_string()))?;
+        let port = uri.port_u16().unwrap_or(853);
+        let server_name = hostname.try_into()?;
+
+        let addrs = udp_resolve(boot_strap_addr, hostname, port).await?;
+
         let mut root_certs = RootCertStore::empty();
 
         for cert in TLS_SERVER_ROOTS.0 {
@@ -59,33 +67,32 @@ impl TlsProxy {
             root_certs.add_server_trust_anchors(certs);
         }
 
-        let config = ClientConfig::builder()
+        let cfg = ClientConfig::builder()
             .with_safe_defaults()
             .with_root_certificates(root_certs)
             .with_no_client_auth();
+        let cfg = Arc::new(cfg);
 
-        let cfg = Arc::new(config);
+        let (tx, rx) = mpsc::channel(256);
 
-        let mut stream = connect(uri.as_str(), boot_strap_addr, &cfg).await?;
+        let mut ctx = TlsContext::new(rx);
 
-        let (tx, mut rx) = mpsc::channel(256);
-
+        let hostname = hostname.to_string();
         tokio::spawn(async move {
-            while let Err(e) = pipeline_io(&mut stream, &mut rx).await {
-                debug!("{:?} unexpected disconnect: {:?}", uri.as_str(), e);
-
-                'inner: loop {
-                    match connect(uri.as_str(), boot_strap_addr, &cfg).await {
-                        Ok(s) => {
-                            stream = s;
-                            break 'inner;
-                        }
-                        Err(e) => {
-                            debug!("{:?} connect error: {:?}", uri.as_str(), e);
-                            time::sleep(Duration::from_secs(1)).await
-                        }
+            loop {
+                match connect(&addrs, &cfg, &server_name).await {
+                    Ok(stream) => {
+                        let Err(e) = ctx.pipeline_io(stream).await else { return };
+                        trace!("{hostname:?} unexpected disconnect: {e:?}");
+                        let Some(msg) = ctx.rx.recv().await else { return };
+                        ctx.reset();
+                        ctx.encode(msg);
                     }
-                }
+                    Err(e) => {
+                        error!("{hostname:?} connect error: {e:?}");
+                        time::sleep(Duration::from_secs(1)).await;
+                    }
+                };
             }
         });
 
@@ -93,89 +100,49 @@ impl TlsProxy {
     }
 }
 
-async fn pipeline_io(stream: &mut TlsStream, rx: &mut mpsc::Receiver<Msg>) -> io::Result<()> {
-    let mut ctx = TlsContext::new();
-
-    loop {
-        let interest = if ctx.buf_write.want_write_io() {
-            Interest::READABLE | Interest::WRITABLE
-        } else {
-            Interest::READABLE
-        };
-
-        match rx.recv().select(stream.ready(interest)).await {
-            // got new pipelined request. write to buffer and move on.
-            SelectOutput::A(Some(msg)) => ctx.encode(msg),
-            // tls stream is ready to be read/write.
-            SelectOutput::B(res) => {
-                let ready = res?;
-                if ready.is_readable() {
-                    try_read(stream, &mut ctx)?;
-                }
-                if ready.is_writable() && try_write(stream, &mut ctx).is_err() {
-                    break;
-                }
-            }
-            // proxy is dropped from app.
-            SelectOutput::A(None) => break,
-        }
-    }
-
-    loop {
-        let want_read = !ctx.queue.is_empty();
-        let want_write = ctx.buf_write.want_write_io();
-        let interest = match (want_read, want_write) {
-            (true, true) => Interest::READABLE | Interest::WRITABLE,
-            (true, false) => Interest::READABLE,
-            (false, true) => Interest::WRITABLE,
-            (false, false) => break,
-        };
-        let ready = stream.ready(interest).await?;
-        if ready.is_readable() {
-            try_read(stream, &mut ctx)?;
-        }
-        if ready.is_writable() {
-            let _ = try_write(stream, &mut ctx);
-        }
-    }
-
-    Ok(())
-}
-
-fn try_read(stream: &mut TlsStream, ctx: &mut TlsContext) -> io::Result<()> {
-    loop {
-        match read_buf(stream, &mut ctx.buf_read) {
-            // remote closed read. treat as error.
-            Ok(0) => return Err(io::ErrorKind::ConnectionAborted.into()),
-            Ok(_) => ctx.decode(),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(()),
-            Err(e) => return Err(e),
-        }
-    }
-}
-
-fn try_write(stream: &mut TlsStream, ctx: &mut TlsContext) -> io::Result<()> {
-    ctx.buf_write.write_io(stream).map_err(|e| {
-        ctx.buf_write.clear();
-        e
-    })
-}
-
 struct TlsContext {
     len: Option<usize>,
     buf_read: BytesMut,
     buf_write: WriteBuf,
     queue: VecDeque<oneshot::Sender<Vec<u8>>>,
+    rx: mpsc::Receiver<Msg>,
 }
 
 impl TlsContext {
-    fn new() -> Self {
+    fn new(rx: mpsc::Receiver<Msg>) -> Self {
         Self {
             len: None,
             buf_read: BytesMut::new(),
             buf_write: WriteBuf::new(),
             queue: VecDeque::new(),
+            rx,
         }
+    }
+
+    fn reset(&mut self) {
+        self.len = None;
+        self.buf_read.clear();
+        self.buf_write.clear();
+        self.queue.clear();
+    }
+
+    fn try_read(&mut self, stream: &mut TlsStream) -> io::Result<()> {
+        loop {
+            match read_buf(stream, &mut self.buf_read) {
+                // remote closed read. treat as error.
+                Ok(0) => return Err(io::ErrorKind::ConnectionAborted.into()),
+                Ok(_) => self.decode(),
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(()),
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
+    fn try_write(&mut self, stream: &mut TlsStream) -> io::Result<()> {
+        self.buf_write.write_io(stream).map_err(|e| {
+            self.buf_write.clear();
+            e
+        })
     }
 
     fn decode(&mut self) {
@@ -206,25 +173,64 @@ impl TlsContext {
         });
         self.queue.push_back(tx);
     }
+
+    async fn pipeline_io(&mut self, mut stream: TlsStream) -> io::Result<()> {
+        loop {
+            let interest = if self.buf_write.want_write_io() {
+                Interest::READABLE | Interest::WRITABLE
+            } else {
+                Interest::READABLE
+            };
+
+            match self.rx.recv().select(stream.ready(interest)).await {
+                // got new pipelined request. write to buffer and move on.
+                SelectOutput::A(Some(msg)) => self.encode(msg),
+                // tls stream is ready to be read/write.
+                SelectOutput::B(res) => {
+                    let ready = res?;
+                    if ready.is_readable() {
+                        self.try_read(&mut stream)?;
+                    }
+                    if ready.is_writable() && self.try_write(&mut stream).is_err() {
+                        break;
+                    }
+                }
+                // proxy is dropped from app.
+                SelectOutput::A(None) => break,
+            }
+        }
+
+        loop {
+            let want_read = !self.queue.is_empty();
+            let want_write = self.buf_write.want_write_io();
+            let interest = match (want_read, want_write) {
+                (true, true) => Interest::READABLE | Interest::WRITABLE,
+                (true, false) => Interest::READABLE,
+                (false, true) => Interest::WRITABLE,
+                (false, false) => break,
+            };
+            let ready = stream.ready(interest).await?;
+            if ready.is_readable() {
+                self.try_read(&mut stream)?;
+            }
+            if ready.is_writable() {
+                let _ = self.try_write(&mut stream);
+            }
+        }
+
+        Ok(())
+    }
 }
 
 async fn connect(
-    uri: &str,
-    boot_strap_addr: SocketAddr,
+    addrs: &[SocketAddr],
     cfg: &Arc<ClientConfig>,
+    server_name: &ServerName,
 ) -> Result<TlsStream, Error> {
-    let uri = Uri::try_from(String::from(uri))?;
-
-    let hostname = uri.host().ok_or_else(|| InvalidUri(uri.to_string()))?;
-    let port = uri.port_u16().unwrap_or(853);
-
-    let server_name = hostname.try_into()?;
-
-    let addr = udp_resolve(boot_strap_addr, hostname, port).await?;
-
-    let stream = crate::app::try_iter(addr.into_iter(), TcpStream::connect).await?;
-    stream.set_nodelay(true)?;
-    connect_tls(cfg.clone(), server_name, stream).await
+    let stream = crate::app::try_iter(addrs.iter(), TcpStream::connect).await?;
+    let _ = stream.set_nodelay(true);
+    let conn = ClientConnection::new(cfg.clone(), server_name.clone())?;
+    handshake(stream, conn).await
 }
 
 impl Proxy for TlsProxy {
@@ -242,13 +248,7 @@ struct TlsStream {
 }
 
 #[inline(never)]
-async fn connect_tls(
-    config: Arc<ClientConfig>,
-    name: ServerName,
-    mut io: TcpStream,
-) -> Result<TlsStream, Error> {
-    let mut conn = ClientConnection::new(config, name)?;
-
+async fn handshake(mut io: TcpStream, mut conn: ClientConnection) -> Result<TlsStream, Error> {
     loop {
         let interest = match conn.complete_io(&mut io) {
             Ok(_) => {
@@ -270,6 +270,7 @@ async fn connect_tls(
         io.ready(interest).await?;
     }
 }
+
 impl AsyncIo for TlsStream {
     type Future<'f> = <TcpStream as AsyncIo>::Future<'f> where Self: 'f;
 

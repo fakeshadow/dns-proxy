@@ -39,18 +39,20 @@ impl Cache {
 
         packet.read(&mut DnsBuf::new(buf)).ok()?;
 
-        let guard = self.inner.read().unwrap();
+        {
+            let guard = self.inner.read().unwrap();
 
-        for q in packet.questions.iter() {
-            let (val, creation) = guard.get(q.name.as_str())?;
+            for q in packet.questions.iter() {
+                let (val, creation) = guard.get(q.name.as_str())?;
 
-            if self.timer.now().duration_since(*creation).as_secs() >= val.ttl() as u64 {
-                return None;
+                if self.timer.now().duration_since(*creation).as_secs() >= val.ttl() as u64 {
+                    return None;
+                }
+
+                trace!("got cache record: {val:?}");
+
+                packet.answers.push(val.clone());
             }
-
-            trace!("got cache record: {val:?}");
-
-            packet.answers.push(val.clone());
         }
 
         let mut buf = vec![0; 512];

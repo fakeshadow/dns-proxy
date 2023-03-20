@@ -38,7 +38,7 @@ impl Proxy for UdpProxy {
 
             let n = socket.recv(&mut buf).await?;
 
-            let _ = buf.split_off(n);
+            buf.truncate(n);
 
             Ok(buf)
         })

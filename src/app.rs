@@ -80,13 +80,14 @@ impl App {
         }))
     }
 
-    async fn forward(&self, buf: Box<[u8]>, addr: SocketAddr) -> Result<(), Error> {
+    async fn forward(&self, mut buf: Box<[u8]>, addr: SocketAddr) -> Result<(), Error> {
         #[cfg(feature = "cache")]
-        let res = match self.cache.try_get(&buf).await {
-            Some(buf) => buf,
+        let res = match self.cache.get(&mut buf) {
+            Some(res) => res,
             None => {
-                let res = self.proxy.proxy(buf.clone()).await?;
-                self.cache.set(buf, res.into()).await
+                let mut res = self.proxy.proxy(buf.clone()).await?;
+                self.cache.set(&mut res);
+                res
             }
         };
 

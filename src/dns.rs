@@ -398,6 +398,28 @@ pub enum DnsRecord {
 }
 
 impl DnsRecord {
+    pub fn ttl(&self) -> u32 {
+        match *self {
+            Self::UNKNOWN { ttl, .. } => ttl,
+            Self::A { ttl, .. } => ttl,
+            Self::NS { ttl, .. } => ttl,
+            Self::CNAME { ttl, .. } => ttl,
+            Self::MX { ttl, .. } => ttl,
+            Self::AAAA { ttl, .. } => ttl,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        match *self {
+            Self::UNKNOWN { ref domain, .. } => domain,
+            Self::A { ref domain, .. } => domain,
+            Self::NS { ref domain, .. } => domain,
+            Self::CNAME { ref domain, .. } => domain,
+            Self::MX { ref domain, .. } => domain,
+            Self::AAAA { ref domain, .. } => domain,
+        }
+    }
+
     pub fn read(buf: &mut DnsBuf) -> io::Result<DnsRecord> {
         let mut domain = String::new();
         buf.read_qname(&mut domain)?;

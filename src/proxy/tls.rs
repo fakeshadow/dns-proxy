@@ -24,7 +24,6 @@ use tokio::{
     time,
 };
 use tracing::{error, trace};
-use webpki_roots::TLS_SERVER_ROOTS;
 use xitca_io::{
     bytes::{Buf, BufInterest, BufWrite, BytesMut, WriteBuf},
     io::{AsyncIo, Interest, Ready},
@@ -56,16 +55,13 @@ impl TlsProxy {
         let addrs = udp_resolve(boot_strap_addr, hostname, port).await?;
 
         let mut root_certs = RootCertStore::empty();
-
-        for cert in TLS_SERVER_ROOTS.0 {
-            let cert = OwnedTrustAnchor::from_subject_spki_name_constraints(
+        root_certs.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|cert| {
+            OwnedTrustAnchor::from_subject_spki_name_constraints(
                 cert.subject,
                 cert.spki,
                 cert.name_constraints,
-            );
-            let certs = vec![cert].into_iter();
-            root_certs.add_server_trust_anchors(certs);
-        }
+            )
+        }));
 
         let cfg = ClientConfig::builder()
             .with_safe_defaults()
@@ -84,12 +80,13 @@ impl TlsProxy {
                     Ok(stream) => {
                         let Err(e) = ctx.pipeline_io(stream).await else { return };
                         trace!("{hostname:?} unexpected disconnect: {e:?}");
-                        let Some(msg) = ctx.rx.recv().await else { return };
-                        ctx.reset();
-                        ctx.encode(msg);
+                        if !ctx.wait_for_reconnect().await {
+                            return;
+                        }
                     }
                     Err(e) => {
                         error!("{hostname:?} connect error: {e:?}");
+                        ctx.reset();
                         time::sleep(Duration::from_secs(1)).await;
                     }
                 };
@@ -219,6 +216,11 @@ impl TlsContext {
         }
 
         Ok(())
+    }
+
+    async fn wait_for_reconnect(&mut self) -> bool {
+        self.reset();
+        self.rx.recv().await.map(|msg| self.encode(msg)).is_some()
     }
 }
 

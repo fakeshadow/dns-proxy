@@ -53,6 +53,10 @@ pub(super) async fn udp_resolve(
 ) -> std::io::Result<Vec<SocketAddr>> {
     use tracing::debug;
 
+    use core::time::Duration;
+
+    use tokio::time::timeout;
+
     use crate::dns::{DnsBuf, DnsPacket, DnsQuestion, DnsRecord, QueryType};
 
     debug!("resolving upstream host: {:?}", hostname);
@@ -70,13 +74,27 @@ pub(super) async fn udp_resolve(
 
     let socket = UdpSocket::bind("0.0.0.0:0").await?;
     socket.connect(boot_strap_addr).await?;
-    socket.send(dns_buf.as_slice()).await?;
 
-    let len = socket.recv(&mut buf).await?;
-    let mut dns_buf = DnsBuf::new(&mut buf[..len]);
+    let mut retry = 0;
+
+    let send_buf = dns_buf.as_slice().to_vec();
+
+    let len = loop {
+        socket.send(send_buf.as_slice()).await?;
+
+        match timeout(Duration::from_secs(2), socket.recv(&mut buf)).await {
+            Ok(res) => break res?,
+            Err(_) => {
+                retry += 1;
+                if retry > 10 {
+                    return Err(std::io::ErrorKind::TimedOut.into());
+                }
+            }
+        }
+    };
 
     let mut dns_packet = DnsPacket::new();
-    dns_packet.read(&mut dns_buf)?;
+    dns_packet.read(&mut DnsBuf::new(&mut buf[..len]))?;
 
     let res = dns_packet
         .answers

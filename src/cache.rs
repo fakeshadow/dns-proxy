@@ -12,11 +12,34 @@ use crate::dns::{DnsBuf, DnsPacket, DnsQuestion, DnsRecord};
 /// a simple cache just use query bytes and result bytes as key value pair.
 pub struct Cache {
     timer: LowResTimer,
-    inner: RwLock<HashMap<Key, Val>>,
+    inner: RwLock<HashMap<Key, CacheEntry>>,
 }
 
 type Key = Box<[DnsQuestion]>;
-type Val = (Box<[DnsRecord]>, Instant);
+
+struct CacheEntry {
+    answers: Box<[DnsRecord]>,
+    creation: Instant,
+}
+
+impl CacheEntry {
+    fn new(answers: Box<[DnsRecord]>) -> Self {
+        Self {
+            answers,
+            creation: Instant::now(),
+        }
+    }
+
+    fn is_expired(&self, now: Instant) -> bool {
+        self.answers
+            .iter()
+            .any(|answer| now.duration_since(self.creation).as_secs() >= answer.ttl() as u64)
+    }
+
+    fn answers(&self) -> &[DnsRecord] {
+        &self.answers
+    }
+}
 
 impl Cache {
     pub fn new() -> Self {
@@ -30,12 +53,11 @@ impl Cache {
         let mut packet = DnsPacket::new();
         if packet.read(&mut DnsBuf::new(buf)).is_ok() {
             let questions = packet.questions.into_boxed_slice();
-            let answers = packet.answers.into();
             trace!("setting cache record: {:?}", questions);
-            self.inner
-                .write()
-                .unwrap()
-                .insert(questions, (answers, self.timer.now()));
+            self.inner.write().unwrap().insert(
+                questions,
+                CacheEntry::new(packet.answers.into_boxed_slice()),
+            );
         }
     }
 
@@ -46,17 +68,15 @@ impl Cache {
 
         let guard = self.inner.read().unwrap();
 
-        let (answers, creation) = guard.get(packet.questions.as_slice())?;
+        let entry = guard.get(packet.questions.as_slice())?;
 
-        for answer in answers.iter() {
-            if self.timer.now().duration_since(*creation).as_secs() >= answer.ttl() as u64 {
-                return None;
-            }
+        if entry.is_expired(self.timer.now()) {
+            return None;
         }
 
+        let answers = entry.answers();
         trace!("got cache records: {answers:?}");
-
-        packet.answers = &**answers;
+        packet.answers = answers;
 
         let mut buf = vec![0; 512];
         let dns_buf = &mut DnsBuf::new(&mut buf);
@@ -98,24 +118,3 @@ impl Drop for LowResTimer {
         self.handle.abort();
     }
 }
-
-// #[cfg(test)]
-// mod test {
-//     use super::*;
-//
-//     #[tokio::test]
-//     async fn cache() {
-//         let cache = Cache::with_ttl(Duration::from_secs(1));
-//
-//         let val = cache
-//             .set(b"123".to_vec().into(), b"321".to_vec().into())
-//             .await;
-//
-//         assert_eq!(val.as_ref(), b"321");
-//         let val2 = cache.try_get(b"123").await.unwrap();
-//         assert_eq!(val, val2);
-//
-//         tokio::time::sleep(Duration::from_secs(2)).await;
-//         assert!(cache.try_get(b"123").await.is_none());
-//     }
-// }

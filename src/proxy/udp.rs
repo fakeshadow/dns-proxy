@@ -65,7 +65,7 @@ pub(super) async fn udp_resolve(
 
     let mut dns_buf = DnsBuf::new(&mut buf);
 
-    let mut dns_packet = DnsPacket::new();
+    let mut dns_packet = DnsPacket::new_ref();
     dns_packet
         .questions
         .push(DnsQuestion::new(String::from(hostname), QueryType::A));

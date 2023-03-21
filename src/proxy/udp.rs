@@ -1,9 +1,8 @@
 use std::net::SocketAddr;
 
-use futures_core::future::BoxFuture;
 use tokio::{net::UdpSocket, sync::Semaphore};
 
-use crate::error::Error;
+use crate::{error::Error, util::BoxFuture};
 
 use super::Proxy;
 

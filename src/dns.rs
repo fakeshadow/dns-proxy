@@ -18,6 +18,7 @@ impl<'a> DnsBuf<'a> {
         DnsBuf { buf, pos: 0 }
     }
 
+    #[cfg(any(feature = "https", feature = "tls"))]
     pub fn as_slice(&self) -> &[u8] {
         &self.buf[..self.pos]
     }

@@ -2,15 +2,14 @@
 #![feature(type_alias_impl_trait)]
 
 extern crate alloc;
-extern crate core;
 
 mod app;
 mod cache;
 mod config;
-#[cfg(any(feature = "tls", feature = "https"))]
 mod dns;
 mod error;
 mod proxy;
+mod util;
 
 use tracing::{error, info};
 

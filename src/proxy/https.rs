@@ -1,6 +1,5 @@
 use std::{convert::TryFrom, net::SocketAddr};
 
-use futures_core::future::BoxFuture;
 use tracing::debug;
 use xitca_client::{
     http::{
@@ -10,7 +9,7 @@ use xitca_client::{
     Resolve,
 };
 
-use crate::error::Error;
+use crate::{error::Error, util::BoxFuture};
 
 use super::{udp::udp_resolve, Proxy};
 

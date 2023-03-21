@@ -22,7 +22,6 @@ tls = ["http", "rustls", "tokio/time", "webpki-roots", "xitca-io", "xitca-unsafe
 
 [dependencies]
 bpaf = "0.7"
-futures-core = { version = "0.3", default-features = false, features = ["alloc"] }
 tokio = { version = "1.26", features = ["net", "rt-multi-thread", "sync", "time"] }
 tracing = { version = "0.1", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt"] }

@@ -14,7 +14,6 @@ use std::{
     net::SocketAddr,
 };
 
-use futures_core::future::BoxFuture;
 use http::Uri;
 use rustls::{
     ClientConfig, ClientConnection, OwnedTrustAnchor, RootCertStore, ServerName, StreamOwned,
@@ -34,7 +33,7 @@ use xitca_unsafe_collection::{
     futures::{Select, SelectOutput},
 };
 
-use crate::{error::Error, proxy::udp::udp_resolve};
+use crate::{error::Error, proxy::udp::udp_resolve, util::BoxFuture};
 
 use super::Proxy;
 

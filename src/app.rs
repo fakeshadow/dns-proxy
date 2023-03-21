@@ -11,6 +11,7 @@ use tokio::net::UdpSocket;
 use tracing::error;
 
 use crate::{
+    cache::Cache,
     config::{Config, UpstreamVariant},
     error::Error,
     proxy::{udp::UdpProxy, Proxy},
@@ -18,7 +19,7 @@ use crate::{
 
 pub struct App {
     listener: UdpSocket,
-    cache: crate::cache::Cache,
+    cache: Cache,
     proxy: Box<dyn Proxy>,
 }
 
@@ -73,7 +74,7 @@ impl App {
 
         Ok(Arc::new(Self {
             listener,
-            cache: crate::cache::Cache::new(),
+            cache: Cache::new(),
             proxy,
         }))
     }

@@ -19,8 +19,6 @@ keywords = [
 https = ["xitca-client/http2", "xitca-client/rustls"]
 # feature for DoT proxy.
 tls = ["http", "rustls", "tokio/time", "webpki-roots", "xitca-io", "xitca-unsafe-collection"]
-# feature for simple dns caching.
-cache = []
 
 [dependencies]
 bpaf = "0.7"

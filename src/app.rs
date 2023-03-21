@@ -18,7 +18,6 @@ use crate::{
 
 pub struct App {
     listener: UdpSocket,
-    #[cfg(feature = "cache")]
     cache: crate::cache::Cache,
     proxy: Box<dyn Proxy>,
 }
@@ -74,14 +73,12 @@ impl App {
 
         Ok(Arc::new(Self {
             listener,
-            #[cfg(feature = "cache")]
             cache: crate::cache::Cache::new(),
             proxy,
         }))
     }
 
     async fn forward(&self, mut buf: Box<[u8]>, addr: SocketAddr) -> Result<(), Error> {
-        #[cfg(feature = "cache")]
         let res = match self.cache.get(&mut buf) {
             Some(res) => res,
             None => {
@@ -90,9 +87,6 @@ impl App {
                 res
             }
         };
-
-        #[cfg(not(feature = "cache"))]
-        let res = self.proxy.proxy(buf).await?;
 
         self.listener.send_to(&res, addr).await?;
         Ok(())

@@ -2,6 +2,7 @@
 
 #![allow(clippy::upper_case_acronyms)]
 
+use std::ops::Deref;
 use std::{
     io,
     net::{Ipv4Addr, Ipv6Addr},
@@ -298,7 +299,7 @@ impl DnsHeader {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum QueryType {
     UNKNOWN(u16),
     A,     // 1
@@ -332,7 +333,7 @@ impl QueryType {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct DnsQuestion {
     pub name: String,
     pub qtype: QueryType,
@@ -406,17 +407,6 @@ impl DnsRecord {
             Self::CNAME { ttl, .. } => ttl,
             Self::MX { ttl, .. } => ttl,
             Self::AAAA { ttl, .. } => ttl,
-        }
-    }
-
-    pub fn name(&self) -> &str {
-        match *self {
-            Self::UNKNOWN { ref domain, .. } => domain,
-            Self::A { ref domain, .. } => domain,
-            Self::NS { ref domain, .. } => domain,
-            Self::CNAME { ref domain, .. } => domain,
-            Self::MX { ref domain, .. } => domain,
-            Self::AAAA { ref domain, .. } => domain,
         }
     }
 
@@ -607,10 +597,10 @@ impl DnsRecord {
 }
 
 #[derive(Clone, Debug)]
-pub struct DnsPacket {
+pub struct DnsPacket<A = Vec<DnsRecord>> {
     pub header: DnsHeader,
     pub questions: Vec<DnsQuestion>,
-    pub answers: Vec<DnsRecord>,
+    pub answers: A,
     pub authorities: Vec<DnsRecord>,
     pub resources: Vec<DnsRecord>,
 }
@@ -621,6 +611,16 @@ impl DnsPacket {
             header: DnsHeader::new(),
             questions: Vec::new(),
             answers: Vec::new(),
+            authorities: Vec::new(),
+            resources: Vec::new(),
+        }
+    }
+
+    pub const fn new_ref<'a>() -> DnsPacket<&'a [DnsRecord]> {
+        DnsPacket {
+            header: DnsHeader::new(),
+            questions: Vec::new(),
+            answers: &[],
             authorities: Vec::new(),
             resources: Vec::new(),
         }
@@ -650,10 +650,40 @@ impl DnsPacket {
 
         Ok(())
     }
+}
 
+impl DnsPacket<&'_ [DnsRecord]> {
+    pub fn read(&mut self, buf: &mut DnsBuf) -> io::Result<()> {
+        self.header.read(buf)?;
+
+        for _ in 0..self.header.questions {
+            let mut question = DnsQuestion::new("".to_string(), QueryType::UNKNOWN(0));
+            question.read(buf)?;
+            self.questions.push(question);
+        }
+
+        for _ in 0..self.header.authoritative_entries {
+            let rec = DnsRecord::read(buf)?;
+            self.authorities.push(rec);
+        }
+        for _ in 0..self.header.resource_entries {
+            let rec = DnsRecord::read(buf)?;
+            self.resources.push(rec);
+        }
+
+        Ok(())
+    }
+}
+
+impl<A> DnsPacket<A>
+where
+    A: Deref<Target = [DnsRecord]>,
+{
     pub fn write(&mut self, buf: &mut DnsBuf) -> io::Result<()> {
+        let answers = self.answers.deref();
+
         self.header.questions = self.questions.len() as u16;
-        self.header.answers = self.answers.len() as u16;
+        self.header.answers = answers.len() as u16;
         self.header.authoritative_entries = self.authorities.len() as u16;
         self.header.resource_entries = self.resources.len() as u16;
 
@@ -662,7 +692,7 @@ impl DnsPacket {
         for question in &self.questions {
             question.write(buf)?;
         }
-        for rec in &self.answers {
+        for rec in answers {
             rec.write(buf)?;
         }
         for rec in &self.authorities {

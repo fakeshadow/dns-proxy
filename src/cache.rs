@@ -7,13 +7,16 @@ use std::{collections::HashMap, sync::RwLock, time::Instant};
 use tokio::task::JoinHandle;
 use tracing::trace;
 
-use crate::dns::{DnsBuf, DnsPacket, DnsRecord};
+use crate::dns::{DnsBuf, DnsPacket, DnsQuestion, DnsRecord};
 
 /// a simple cache just use query bytes and result bytes as key value pair.
 pub struct Cache {
     timer: LowResTimer,
-    inner: RwLock<HashMap<String, (DnsRecord, Instant)>>,
+    inner: RwLock<HashMap<Key, Val>>,
 }
+
+type Key = Box<[DnsQuestion]>;
+type Val = (Box<[DnsRecord]>, Instant);
 
 impl Cache {
     pub fn new() -> Self {
@@ -26,34 +29,34 @@ impl Cache {
     pub fn set(&self, buf: &mut [u8]) {
         let mut packet = DnsPacket::new();
         if packet.read(&mut DnsBuf::new(buf)).is_ok() {
-            let mut guard = self.inner.write().unwrap();
-            for a in packet.answers {
-                trace!("setting cache record: {a:?}");
-                guard.insert(a.name().into(), (a, self.timer.now()));
-            }
+            let questions = packet.questions.into_boxed_slice();
+            let answers = packet.answers.into();
+            trace!("setting cache record: {:?}", questions);
+            self.inner
+                .write()
+                .unwrap()
+                .insert(questions, (answers, self.timer.now()));
         }
     }
 
     pub fn get(&self, buf: &mut [u8]) -> Option<Vec<u8>> {
-        let mut packet = DnsPacket::new();
+        let mut packet = DnsPacket::new_ref();
 
         packet.read(&mut DnsBuf::new(buf)).ok()?;
 
-        {
-            let guard = self.inner.read().unwrap();
+        let guard = self.inner.read().unwrap();
 
-            for q in packet.questions.iter() {
-                let (val, creation) = guard.get(q.name.as_str())?;
+        let (answers, creation) = guard.get(packet.questions.as_slice())?;
 
-                if self.timer.now().duration_since(*creation).as_secs() >= val.ttl() as u64 {
-                    return None;
-                }
-
-                trace!("got cache record: {val:?}");
-
-                packet.answers.push(val.clone());
+        for answer in answers.iter() {
+            if self.timer.now().duration_since(*creation).as_secs() >= answer.ttl() as u64 {
+                return None;
             }
         }
+
+        trace!("got cache records: {answers:?}");
+
+        packet.answers = &**answers;
 
         let mut buf = vec![0; 512];
         let dns_buf = &mut DnsBuf::new(&mut buf);

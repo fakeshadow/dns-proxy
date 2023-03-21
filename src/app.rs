@@ -31,15 +31,7 @@ impl App {
 
         loop {
             match app.listener.recv_from(&mut buf).await {
-                Ok((len, addr)) => {
-                    let app = app.clone();
-                    let buf = (&buf[..len]).into();
-                    tokio::spawn(async move {
-                        if let Err(e) = app.forward(buf, addr).await {
-                            error!("forwarding dns lookup error: {}", e)
-                        }
-                    });
-                }
+                Ok((len, addr)) => app.forward(&mut buf[..len], addr),
                 Err(ref e) if connection_error(e) => continue,
                 Err(e) => return Err(e.into()),
             }
@@ -79,19 +71,37 @@ impl App {
         }))
     }
 
-    async fn forward(&self, mut buf: Box<[u8]>, addr: SocketAddr) -> Result<(), Error> {
-        let res = match self.cache.get(&mut buf) {
-            Some(res) => res,
-            None => {
-                let mut res = self.proxy.proxy(buf.clone()).await?;
+    fn forward(self: &Arc<Self>, buf: &mut [u8], addr: SocketAddr) {
+        let either = match self.cache.get(buf) {
+            Some(cache) => EitherBuf::Cache(cache),
+            None => EitherBuf::Req((&*buf).into()),
+        };
+
+        let this = self.clone();
+        tokio::spawn(async move {
+            if let Err(e) = this._forward(either, addr).await {
+                error!("forwarding dns lookup error: {}", e)
+            }
+        });
+    }
+
+    async fn _forward(&self, either: EitherBuf, addr: SocketAddr) -> Result<(), Error> {
+        let buf = match either {
+            EitherBuf::Cache(cache) => cache,
+            EitherBuf::Req(buf) => {
+                let mut res = self.proxy.proxy(buf).await?;
                 self.cache.set(&mut res);
                 res
             }
         };
-
-        self.listener.send_to(&res, addr).await?;
+        self.listener.send_to(&buf, addr).await?;
         Ok(())
     }
+}
+
+enum EitherBuf {
+    Cache(Vec<u8>),
+    Req(Box<[u8]>),
 }
 
 #[cold]

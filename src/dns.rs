@@ -9,6 +9,8 @@ use std::{
     net::{Ipv4Addr, Ipv6Addr},
 };
 
+use tracing::warn;
+
 pub struct Buf<'a> {
     pub buf: &'a mut [u8],
     pub pos: usize,
@@ -402,7 +404,7 @@ impl Answer {
         let ttl = buf.read_u32()?;
         let data_len = buf.read_u16()?;
 
-        let variant = match qtype {
+        let record = match qtype {
             Query::A => {
                 let raw_addr = buf.read_u32()?;
                 let addr = Ipv4Addr::new(
@@ -411,7 +413,6 @@ impl Answer {
                     ((raw_addr >> 8) & 0xFF) as u8,
                     (raw_addr & 0xFF) as u8,
                 );
-
                 Record::A { addr }
             }
             Query::AAAA => {
@@ -429,26 +430,22 @@ impl Answer {
                     ((raw_addr4 >> 16) & 0xFFFF) as u16,
                     (raw_addr4 & 0xFFFF) as u16,
                 );
-
                 Record::AAAA { addr }
             }
             Query::NS => {
                 let mut host = String::new();
                 buf.read_qname(&mut host)?;
-
                 Record::NS { host }
             }
             Query::CNAME => {
                 let mut host = String::new();
                 buf.read_qname(&mut host)?;
-
                 Record::CNAME { host }
             }
             Query::MX => {
                 let priority = buf.read_u16()?;
                 let mut host = String::new();
                 buf.read_qname(&mut host)?;
-
                 Record::MX { priority, host }
             }
             Query::UNKNOWN(_) => {
@@ -463,7 +460,7 @@ impl Answer {
         Ok(Answer {
             domain,
             ttl,
-            record: variant,
+            record,
         })
     }
 
@@ -540,9 +537,7 @@ impl Answer {
                     buf.write_u16(*octet)?;
                 }
             }
-            Record::UNKNOWN { .. } => {
-                // logs::warn!("Skipping record: {:?}", self);
-            }
+            ref record => warn!("skipping record: {record:?}"),
         }
 
         Ok(buf.pos - start_pos)
@@ -564,16 +559,6 @@ impl Packet {
             header: Header::new(),
             questions: Vec::new(),
             answers: Vec::new(),
-            authorities: Vec::new(),
-            resources: Vec::new(),
-        }
-    }
-
-    pub const fn new_ref<'a>() -> Packet<&'a [Answer]> {
-        Packet {
-            header: Header::new(),
-            questions: Vec::new(),
-            answers: &[],
             authorities: Vec::new(),
             resources: Vec::new(),
         }
@@ -605,7 +590,17 @@ impl Packet {
     }
 }
 
-impl Packet<&'_ [Answer]> {
+impl<'a> Packet<&'a [Answer]> {
+    pub const fn new_ref() -> Self {
+        Self {
+            header: Header::new(),
+            questions: Vec::new(),
+            answers: &[],
+            authorities: Vec::new(),
+            resources: Vec::new(),
+        }
+    }
+
     pub(super) fn read(&mut self, buf: &mut Buf) -> io::Result<()> {
         self.header.read(buf)?;
 

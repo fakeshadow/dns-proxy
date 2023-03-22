@@ -17,6 +17,7 @@ pub struct Cache {
 
 type Key = Box<[Question]>;
 
+#[derive(Debug)]
 struct CacheEntry {
     answers: Box<[Answer]>,
     creation: Instant,
@@ -53,7 +54,7 @@ impl Cache {
         let mut packet = Packet::new();
         if packet.read(&mut Buf::new(buf)).is_ok() {
             let questions = packet.questions.into_boxed_slice();
-            trace!("setting cache record: {:?}", questions);
+            trace!("updating/creating cache record: {questions:?}");
             self.inner.write().unwrap().insert(
                 questions,
                 CacheEntry::new(packet.answers.into_boxed_slice()),
@@ -71,6 +72,7 @@ impl Cache {
         let entry = guard.get(packet.questions.as_slice())?;
 
         if entry.is_expired(self.timer.now()) {
+            trace!("cache entry expired: {entry:?}");
             return None;
         }
 

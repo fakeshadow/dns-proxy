@@ -58,7 +58,7 @@ pub(super) async fn udp_resolve(
 
     use crate::dns::{Buf, Packet, Query, Question, Record};
 
-    debug!("resolving upstream host: {:?}", hostname);
+    debug!("resolving upstream host: {hostname}");
 
     let mut buf = [0; 512];
 
@@ -99,15 +99,12 @@ pub(super) async fn udp_resolve(
         .answers
         .into_iter()
         .filter_map(|answer| {
-            debug!(
-                "upstream host: {:?} resolved to dns record: {:?}",
-                hostname, answer
-            );
+            debug!("upstream host: {hostname} resolved to dns record: {answer:?}");
             match answer.record() {
                 Record::A { addr, .. } => Some((*addr, port).into()),
                 Record::AAAA { addr, .. } => Some((*addr, port).into()),
                 record => {
-                    debug!("dns record: {:?} is not supported!", record);
+                    debug!("dns record: {record:?} is not supported!");
                     None
                 }
             }

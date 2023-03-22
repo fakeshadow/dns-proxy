@@ -80,7 +80,7 @@ impl App {
         let this = self.clone();
         tokio::spawn(async move {
             if let Err(e) = this._forward(either, addr).await {
-                error!("forwarding dns lookup error: {}", e)
+                error!("forwarding dns lookup error: {e}")
             }
         });
     }

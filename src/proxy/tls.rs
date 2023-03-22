@@ -47,11 +47,14 @@ impl TlsProxy {
     pub async fn try_from_uri(uri: String, boot_strap_addr: SocketAddr) -> Result<Self, Error> {
         let uri = Uri::try_from(uri)?;
 
-        let hostname = uri.host().ok_or_else(|| InvalidUri(uri.to_string()))?;
+        let host = match uri.host() {
+            Some(host) => host,
+            None => return Err(Error::from(InvalidUri(uri))),
+        };
+        let server_name = host.try_into()?;
         let port = uri.port_u16().unwrap_or(853);
-        let server_name = hostname.try_into()?;
 
-        let addrs = udp_resolve(boot_strap_addr, hostname, port).await?;
+        let addrs = udp_resolve(boot_strap_addr, host, port).await?;
 
         let mut root_certs = RootCertStore::empty();
         root_certs.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|cert| {
@@ -72,19 +75,19 @@ impl TlsProxy {
 
         let mut ctx = TlsContext::new(rx);
 
-        let hostname = hostname.to_string();
         tokio::spawn(async move {
+            let host = uri.host().unwrap();
             loop {
                 match connect(&addrs, &cfg, &server_name).await {
                     Ok(stream) => {
                         let Err(e) = ctx.pipeline_io(stream).await else { return };
-                        trace!("{hostname:?} unexpected disconnect: {e:?}");
+                        trace!("{host} unexpected disconnect: {e}");
                         if !ctx.wait_for_reconnect().await {
                             return;
                         }
                     }
                     Err(e) => {
-                        error!("{hostname:?} connect error: {e:?}");
+                        error!("{host} connect error: {e}");
                         ctx.reset();
                         time::sleep(Duration::from_secs(1)).await;
                     }
@@ -319,7 +322,7 @@ impl Write for TlsStream {
 }
 
 #[derive(Debug)]
-struct InvalidUri(String);
+struct InvalidUri(Uri);
 
 impl fmt::Display for InvalidUri {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

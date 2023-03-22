@@ -195,15 +195,15 @@ pub enum ResultCode {
     REFUSED = 5,
 }
 
-impl ResultCode {
-    pub fn from_num(num: u8) -> ResultCode {
+impl From<u8> for ResultCode {
+    fn from(num: u8) -> Self {
         match num {
-            1 => ResultCode::FORMERR,
-            2 => ResultCode::SERVFAIL,
-            3 => ResultCode::NXDOMAIN,
-            4 => ResultCode::NOTIMP,
-            5 => ResultCode::REFUSED,
-            _ => ResultCode::NOERROR,
+            1 => Self::FORMERR,
+            2 => Self::SERVFAIL,
+            3 => Self::NXDOMAIN,
+            4 => Self::NOTIMP,
+            5 => Self::REFUSED,
+            _ => Self::NOERROR,
         }
     }
 }
@@ -260,7 +260,7 @@ impl Header {
         self.opcode = (a >> 3) & 0x0F;
         self.response = (a & (1 << 7)) > 0;
 
-        self.rescode = ResultCode::from_num(b & 0x0F);
+        self.rescode = ResultCode::from(b & 0x0F);
         self.checking_disabled = (b & (1 << 4)) > 0;
         self.authed_data = (b & (1 << 5)) > 0;
         self.z = (b & (1 << 6)) > 0;
@@ -311,9 +311,9 @@ pub enum Query {
     AAAA,  // 28
 }
 
-impl Query {
-    pub const fn to_num(self) -> u16 {
-        match self {
+impl From<Query> for u16 {
+    fn from(val: Query) -> Self {
+        match val {
             Query::UNKNOWN(x) => x,
             Query::A => 1,
             Query::NS => 2,
@@ -322,15 +322,17 @@ impl Query {
             Query::AAAA => 28,
         }
     }
+}
 
-    pub const fn from_num(num: u16) -> Query {
-        match num {
+impl From<u16> for Query {
+    fn from(val: u16) -> Self {
+        match val {
             1 => Query::A,
             2 => Query::NS,
             5 => Query::CNAME,
             15 => Query::MX,
             28 => Query::AAAA,
-            _ => Query::UNKNOWN(num),
+            v => Query::UNKNOWN(v),
         }
     }
 }
@@ -350,7 +352,7 @@ impl Question {
 
     fn read(&mut self, buf: &mut Buf) -> io::Result<()> {
         buf.read_qname(&mut self.name)?;
-        self.qtype = Query::from_num(buf.read_u16()?); // qtype
+        self.qtype = Query::from(buf.read_u16()?); // qtype
         let _ = buf.read_u16()?; // class
 
         Ok(())
@@ -358,9 +360,7 @@ impl Question {
 
     fn write(&self, buf: &mut Buf) -> io::Result<()> {
         buf.write_qname(&self.name)?;
-
-        let typenum = self.qtype.to_num();
-        buf.write_u16(typenum)?;
+        buf.write_u16(self.qtype.into())?;
         buf.write_u16(1)
     }
 }
@@ -387,6 +387,7 @@ impl Answer {
         self.ttl
     }
 
+    #[allow(dead_code)]
     pub(super) const fn record(&self) -> &Record {
         &self.record
     }
@@ -396,7 +397,7 @@ impl Answer {
         buf.read_qname(&mut domain)?;
 
         let qtype_num = buf.read_u16()?;
-        let qtype = Query::from_num(qtype_num);
+        let qtype = Query::from(qtype_num);
         let _ = buf.read_u16()?;
         let ttl = buf.read_u32()?;
         let data_len = buf.read_u16()?;
@@ -474,7 +475,7 @@ impl Answer {
         match self.record {
             Record::A { ref addr } => {
                 buf.write_qname(domain)?;
-                buf.write_u16(Query::A.to_num())?;
+                buf.write_u16(Query::A.into())?;
                 buf.write_u16(1)?;
                 buf.write_u32(ttl)?;
                 buf.write_u16(4)?;
@@ -487,7 +488,7 @@ impl Answer {
             }
             Record::NS { ref host } => {
                 buf.write_qname(domain)?;
-                buf.write_u16(Query::NS.to_num())?;
+                buf.write_u16(Query::NS.into())?;
                 buf.write_u16(1)?;
                 buf.write_u32(ttl)?;
 
@@ -501,7 +502,7 @@ impl Answer {
             }
             Record::CNAME { ref host } => {
                 buf.write_qname(domain)?;
-                buf.write_u16(Query::CNAME.to_num())?;
+                buf.write_u16(Query::CNAME.into())?;
                 buf.write_u16(1)?;
                 buf.write_u32(ttl)?;
 
@@ -515,7 +516,7 @@ impl Answer {
             }
             Record::MX { priority, ref host } => {
                 buf.write_qname(domain)?;
-                buf.write_u16(Query::MX.to_num())?;
+                buf.write_u16(Query::MX.into())?;
                 buf.write_u16(1)?;
                 buf.write_u32(ttl)?;
 
@@ -530,7 +531,7 @@ impl Answer {
             }
             Record::AAAA { ref addr } => {
                 buf.write_qname(domain)?;
-                buf.write_u16(Query::AAAA.to_num())?;
+                buf.write_u16(Query::AAAA.into())?;
                 buf.write_u16(1)?;
                 buf.write_u32(ttl)?;
                 buf.write_u16(16)?;

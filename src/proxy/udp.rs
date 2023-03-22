@@ -56,18 +56,18 @@ pub(super) async fn udp_resolve(
 
     use tokio::time::timeout;
 
-    use crate::dns::{DnsBuf, DnsPacket, DnsQuestion, DnsRecord, QueryType};
+    use crate::dns::{Buf, Packet, Query, Question, Record};
 
     debug!("resolving upstream host: {:?}", hostname);
 
     let mut buf = [0; 512];
 
-    let mut dns_buf = DnsBuf::new(&mut buf);
+    let mut dns_buf = Buf::new(&mut buf);
 
-    let mut dns_packet = DnsPacket::new_ref();
+    let mut dns_packet = Packet::new_ref();
     dns_packet
         .questions
-        .push(DnsQuestion::new(String::from(hostname), QueryType::A));
+        .push(Question::new(String::from(hostname), Query::A));
 
     dns_packet.write(&mut dns_buf)?;
 
@@ -92,8 +92,8 @@ pub(super) async fn udp_resolve(
         }
     };
 
-    let mut dns_packet = DnsPacket::new();
-    dns_packet.read(&mut DnsBuf::new(&mut buf[..len]))?;
+    let mut dns_packet = Packet::new();
+    dns_packet.read(&mut Buf::new(&mut buf[..len]))?;
 
     let res = dns_packet
         .answers
@@ -103,9 +103,9 @@ pub(super) async fn udp_resolve(
                 "upstream host: {:?} resolved to dns record: {:?}",
                 hostname, answer
             );
-            match answer {
-                DnsRecord::A { addr, .. } => Some((addr, port).into()),
-                DnsRecord::AAAA { addr, .. } => Some((addr, port).into()),
+            match answer.record() {
+                Record::A { addr, .. } => Some((*addr, port).into()),
+                Record::AAAA { addr, .. } => Some((*addr, port).into()),
                 record => {
                     debug!("dns record: {:?} is not supported!", record);
                     None

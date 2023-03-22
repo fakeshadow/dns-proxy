@@ -7,7 +7,7 @@ use std::{collections::HashMap, sync::RwLock, time::Instant};
 use tokio::task::JoinHandle;
 use tracing::trace;
 
-use crate::dns::{DnsBuf, DnsPacket, DnsQuestion, DnsRecord};
+use crate::dns::{Answer, Buf, Packet, Question};
 
 /// a simple cache just use query bytes and result bytes as key value pair.
 pub struct Cache {
@@ -15,15 +15,15 @@ pub struct Cache {
     inner: RwLock<HashMap<Key, CacheEntry>>,
 }
 
-type Key = Box<[DnsQuestion]>;
+type Key = Box<[Question]>;
 
 struct CacheEntry {
-    answers: Box<[DnsRecord]>,
+    answers: Box<[Answer]>,
     creation: Instant,
 }
 
 impl CacheEntry {
-    fn new(answers: Box<[DnsRecord]>) -> Self {
+    fn new(answers: Box<[Answer]>) -> Self {
         Self {
             answers,
             creation: Instant::now(),
@@ -36,7 +36,7 @@ impl CacheEntry {
             .any(|answer| now.duration_since(self.creation).as_secs() >= answer.ttl() as u64)
     }
 
-    fn answers(&self) -> &[DnsRecord] {
+    fn answers(&self) -> &[Answer] {
         &self.answers
     }
 }
@@ -50,8 +50,8 @@ impl Cache {
     }
 
     pub fn set(&self, buf: &mut [u8]) {
-        let mut packet = DnsPacket::new();
-        if packet.read(&mut DnsBuf::new(buf)).is_ok() {
+        let mut packet = Packet::new();
+        if packet.read(&mut Buf::new(buf)).is_ok() {
             let questions = packet.questions.into_boxed_slice();
             trace!("setting cache record: {:?}", questions);
             self.inner.write().unwrap().insert(
@@ -62,9 +62,9 @@ impl Cache {
     }
 
     pub fn get(&self, buf: &mut [u8]) -> Option<Vec<u8>> {
-        let mut packet = DnsPacket::new_ref();
+        let mut packet = Packet::new_ref();
 
-        packet.read(&mut DnsBuf::new(buf)).ok()?;
+        packet.read(&mut Buf::new(buf)).ok()?;
 
         let guard = self.inner.read().unwrap();
 
@@ -79,7 +79,7 @@ impl Cache {
         packet.answers = answers;
 
         let mut buf = vec![0; 512];
-        let dns_buf = &mut DnsBuf::new(&mut buf);
+        let dns_buf = &mut Buf::new(&mut buf);
         packet.write(dns_buf).ok().map(|_| {
             buf.truncate(dns_buf.pos);
             buf

@@ -1,4 +1,4 @@
-use std::{convert::TryFrom, net::SocketAddr};
+use core::{convert::TryFrom, net::SocketAddr};
 
 use tracing::debug;
 use xitca_client::{

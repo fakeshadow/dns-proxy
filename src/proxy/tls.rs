@@ -24,18 +24,17 @@ use tokio::{
 };
 use tracing::{error, trace};
 use xitca_io::{
-    bytes::{Buf, BufInterest, BufWrite, BytesMut, WriteBuf},
+    bytes::{Buf, BufInterest, BufRead, BufWrite, WriteBuf},
     io::{AsyncIo, Interest, Ready},
     net::TcpStream,
 };
-use xitca_unsafe_collection::{
-    bytes::read_buf,
-    futures::{Select, SelectOutput},
-};
+use xitca_unsafe_collection::futures::{Select, SelectOutput};
 
 use crate::{error::Error, proxy::udp::udp_resolve, util::BoxFuture};
 
 use super::Proxy;
+
+type PagedBytesMut = xitca_io::bytes::PagedBytesMut<4096>;
 
 type Msg = (Box<[u8]>, oneshot::Sender<Vec<u8>>);
 
@@ -101,7 +100,7 @@ impl TlsProxy {
 
 struct TlsContext {
     len: Option<usize>,
-    buf_read: BytesMut,
+    buf_read: PagedBytesMut,
     buf_write: WriteBuf,
     queue: VecDeque<oneshot::Sender<Vec<u8>>>,
     rx: mpsc::Receiver<Msg>,
@@ -111,7 +110,7 @@ impl TlsContext {
     fn new(rx: mpsc::Receiver<Msg>) -> Self {
         Self {
             len: None,
-            buf_read: BytesMut::new(),
+            buf_read: PagedBytesMut::new(),
             buf_write: WriteBuf::new(),
             queue: VecDeque::new(),
             rx,
@@ -120,25 +119,17 @@ impl TlsContext {
 
     fn reset(&mut self) {
         self.len = None;
-        self.buf_read.clear();
+        self.buf_read.split();
         self.buf_write.clear();
         self.queue.clear();
     }
 
     fn try_read(&mut self, stream: &mut TlsStream) -> io::Result<()> {
-        loop {
-            match read_buf(stream, &mut self.buf_read) {
-                // remote closed read. treat as error.
-                Ok(0) => return Err(io::ErrorKind::ConnectionAborted.into()),
-                Ok(_) => self.decode(),
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(()),
-                Err(e) => return Err(e),
-            }
-        }
+        self.buf_read.do_io(stream).map(|_| self.decode())
     }
 
     fn try_write(&mut self, stream: &mut TlsStream) -> io::Result<()> {
-        self.buf_write.write_io(stream).map_err(|e| {
+        self.buf_write.do_io(stream).map_err(|e| {
             self.buf_write.clear();
             e
         })

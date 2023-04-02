@@ -1,23 +1,11 @@
-use core::{
-    convert::Infallible,
-    fmt,
-    pin::Pin,
-    task::{Context, Poll},
-    time::Duration,
-};
+use core::{convert::Infallible, fmt, time::Duration};
 
 use alloc::{collections::VecDeque, sync::Arc};
 
-use std::{
-    error,
-    io::{self, Read, Write},
-    net::SocketAddr,
-};
+use std::{error, io, net::SocketAddr};
 
 use http::Uri;
-use rustls::{
-    ClientConfig, ClientConnection, OwnedTrustAnchor, RootCertStore, ServerName, StreamOwned,
-};
+use rustls::{ClientConfig, ClientConnection, OwnedTrustAnchor, RootCertStore, ServerName};
 use tokio::{
     sync::{mpsc, oneshot},
     time,
@@ -25,7 +13,7 @@ use tokio::{
 use tracing::{error, trace};
 use xitca_io::{
     bytes::{Buf, BufInterest, BufRead, BufWrite, WriteBuf},
-    io::{AsyncIo, Interest, Ready},
+    io::{AsyncIo, Interest},
     net::TcpStream,
 };
 use xitca_unsafe_collection::futures::{Select, SelectOutput};
@@ -37,6 +25,8 @@ use super::Proxy;
 type PagedBytesMut = xitca_io::bytes::PagedBytesMut<4096>;
 
 type Msg = (Box<[u8]>, oneshot::Sender<Vec<u8>>);
+
+type TlsStream = xitca_tls::rustls::TlsStream<ClientConnection, TcpStream>;
 
 pub struct TlsProxy {
     tx: mpsc::Sender<Msg>,
@@ -140,8 +130,7 @@ impl TlsContext {
             match self.len {
                 Some(l) if self.buf_read.chunk().len() >= l => {
                     let buf = self.buf_read.split_to(l).to_vec();
-                    let tx = self.queue.pop_front().unwrap();
-                    let _ = tx.send(buf);
+                    let _ = self.queue.pop_front().unwrap().send(buf);
                     self.len = None;
                 }
                 None if self.buf_read.chunk().len() > 2 => {
@@ -225,7 +214,7 @@ async fn connect(
     let stream = crate::app::try_iter(addrs.iter(), TcpStream::connect).await?;
     let _ = stream.set_nodelay(true);
     let conn = ClientConnection::new(cfg.clone(), server_name.clone())?;
-    handshake(stream, conn).await
+    TlsStream::handshake(stream, conn).await.map_err(Into::into)
 }
 
 impl Proxy for TlsProxy {
@@ -233,82 +222,8 @@ impl Proxy for TlsProxy {
         Box::pin(async move {
             let (tx, rx) = oneshot::channel();
             self.tx.send((buf, tx)).await?;
-            Ok(rx.await?)
+            rx.await.map_err(Into::into)
         })
-    }
-}
-
-struct TlsStream {
-    io: StreamOwned<ClientConnection, TcpStream>,
-}
-
-#[inline(never)]
-async fn handshake(mut io: TcpStream, mut conn: ClientConnection) -> Result<TlsStream, Error> {
-    loop {
-        let interest = match conn.complete_io(&mut io) {
-            Ok(_) => {
-                return Ok(TlsStream {
-                    io: StreamOwned::new(conn, io),
-                })
-            }
-            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                match (conn.wants_read(), conn.wants_write()) {
-                    (true, true) => Interest::READABLE | Interest::WRITABLE,
-                    (true, false) => Interest::READABLE,
-                    (false, true) => Interest::WRITABLE,
-                    (false, false) => unreachable!(),
-                }
-            }
-            Err(e) => return Err(e.into()),
-        };
-
-        io.ready(interest).await?;
-    }
-}
-
-impl AsyncIo for TlsStream {
-    type Future<'f> = <TcpStream as AsyncIo>::Future<'f> where Self: 'f;
-
-    #[inline]
-    fn ready(&self, interest: Interest) -> Self::Future<'_> {
-        self.io.get_ref().ready(interest)
-    }
-
-    #[inline]
-    fn poll_ready(&self, interest: Interest, cx: &mut Context<'_>) -> Poll<io::Result<Ready>> {
-        self.io.get_ref().poll_ready(interest, cx)
-    }
-
-    fn is_vectored_write(&self) -> bool {
-        self.io.get_ref().is_vectored_write()
-    }
-
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        AsyncIo::poll_shutdown(Pin::new(self.get_mut().io.get_mut()), cx)
-    }
-}
-
-impl Read for TlsStream {
-    #[inline]
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        Read::read(&mut self.io, buf)
-    }
-}
-
-impl Write for TlsStream {
-    #[inline]
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        Write::write(&mut self.io, buf)
-    }
-
-    #[inline]
-    fn write_vectored(&mut self, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
-        Write::write_vectored(&mut self.io, bufs)
-    }
-
-    #[inline]
-    fn flush(&mut self) -> io::Result<()> {
-        Write::flush(&mut self.io)
     }
 }
 

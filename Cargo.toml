@@ -18,7 +18,7 @@ keywords = [
 # feature for DoH proxy.
 https = ["xitca-client/http2", "xitca-client/rustls"]
 # feature for DoT proxy.
-tls = ["http", "rustls", "tokio/time", "webpki-roots", "xitca-io", "xitca-unsafe-collection"]
+tls = ["http", "rustls", "tokio/time", "webpki-roots", "xitca-io", "xitca-tls", "xitca-unsafe-collection"]
 
 [dependencies]
 bpaf = "0.7"
@@ -34,17 +34,19 @@ http = { version = "0.2", optional = true }
 rustls = { version = "0.21", default-features = false, features = ["tls12"], optional = true }
 webpki-roots = { version = "0.22", optional = true }
 xitca-io = { version = "0.1", features = ["runtime"], optional = true }
+xitca-tls = { version = "0.1", features = ["rustls"], optional = true }
 xitca-unsafe-collection = { version = "0.1", features = ["bytes"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.27", features = ["macros"] }
 
 [patch.crates-io]
-xitca-client = { git = "https://github.com/HFQR/xitca-web", rev = "92d40c46ba7e4ed4b7bccf7bb684bbb0cc08777b" }
-xitca-http = { git = "https://github.com/HFQR/xitca-web", rev = "92d40c46ba7e4ed4b7bccf7bb684bbb0cc08777b" }
-xitca-io = { git = "https://github.com/HFQR/xitca-web", rev = "92d40c46ba7e4ed4b7bccf7bb684bbb0cc08777b" }
-xitca-service = { git = "https://github.com/HFQR/xitca-web", rev = "92d40c46ba7e4ed4b7bccf7bb684bbb0cc08777b" }
-xitca-unsafe-collection = { git = "https://github.com/HFQR/xitca-web", rev = "92d40c46ba7e4ed4b7bccf7bb684bbb0cc08777b" }
+xitca-client = { git = "https://github.com/HFQR/xitca-web", rev = "982a2c7d629c50130fde6bad5f1dd99c9c6479eb" }
+xitca-http = { git = "https://github.com/HFQR/xitca-web", rev = "982a2c7d629c50130fde6bad5f1dd99c9c6479eb" }
+xitca-io = { git = "https://github.com/HFQR/xitca-web", rev = "982a2c7d629c50130fde6bad5f1dd99c9c6479eb" }
+xitca-service = { git = "https://github.com/HFQR/xitca-web", rev = "982a2c7d629c50130fde6bad5f1dd99c9c6479eb" }
+xitca-tls = { git = "https://github.com/HFQR/xitca-web", rev = "982a2c7d629c50130fde6bad5f1dd99c9c6479eb" }
+xitca-unsafe-collection = { git = "https://github.com/HFQR/xitca-web", rev = "982a2c7d629c50130fde6bad5f1dd99c9c6479eb" }
 
 [profile.release]
 lto = true

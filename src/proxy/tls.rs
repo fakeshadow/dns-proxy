@@ -46,7 +46,7 @@ impl TlsProxy {
         let addrs = udp_resolve(boot_strap_addr, host, port).await?;
 
         let mut root_certs = RootCertStore::empty();
-        root_certs.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|cert| {
+        root_certs.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|cert| {
             OwnedTrustAnchor::from_subject_spki_name_constraints(
                 cert.subject,
                 cert.spki,
@@ -69,7 +69,9 @@ impl TlsProxy {
             loop {
                 match connect(&addrs, &cfg, &server_name).await {
                     Ok(stream) => {
-                        let Err(e) = ctx.pipeline_io(stream).await else { return };
+                        let Err(e) = ctx.pipeline_io(stream).await else {
+                            return;
+                        };
                         trace!("{host} unexpected disconnect: {e}");
                         if !ctx.wait_for_reconnect().await {
                             return;

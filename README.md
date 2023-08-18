@@ -8,7 +8,7 @@
 
 ## Requirement
 
-- rustc 1.70.0-nightly (ff4b772f8 2023-03-10)
+- rustc 1.73.0-nightly (076887268 2023-08-17)
 
 ## Build
 

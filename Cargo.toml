@@ -21,7 +21,7 @@ https = ["xitca-client/http2", "xitca-client/rustls"]
 tls = ["http", "rustls", "tokio/time", "webpki-roots", "xitca-io", "xitca-tls", "xitca-unsafe-collection"]
 
 [dependencies]
-bpaf = "0.7"
+bpaf = "0.9"
 tokio = { version = "1.32", features = ["net", "rt-multi-thread", "sync", "time"] }
 tracing = { version = "0.1", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt"] }
@@ -32,7 +32,7 @@ xitca-client = { version = "0.1", default-features = false, optional = true }
 # optional for DoT.
 http = { version = "0.2", optional = true }
 rustls = { version = "0.21", default-features = false, features = ["tls12"], optional = true }
-webpki-roots = { version = "0.23", optional = true }
+webpki-roots = { version = "0.25", optional = true }
 xitca-io = { version = "0.1", features = ["runtime"], optional = true }
 xitca-tls = { version = "0.1", features = ["rustls"], optional = true }
 xitca-unsafe-collection = { version = "0.1", features = ["bytes"], optional = true }
@@ -41,15 +41,15 @@ xitca-unsafe-collection = { version = "0.1", features = ["bytes"], optional = tr
 tokio = { version = "1.32", features = ["macros"] }
 
 [patch.crates-io]
-xitca-client = { git = "https://github.com/HFQR/xitca-web", rev = "c5b22169db1dde1a2411872cffa5b6bd7e14d2f4" }
-xitca-http = { git = "https://github.com/HFQR/xitca-web", rev = "c5b22169db1dde1a2411872cffa5b6bd7e14d2f4" }
-xitca-io = { git = "https://github.com/HFQR/xitca-web", rev = "c5b22169db1dde1a2411872cffa5b6bd7e14d2f4" }
-xitca-service = { git = "https://github.com/HFQR/xitca-web", rev = "c5b22169db1dde1a2411872cffa5b6bd7e14d2f4" }
-xitca-tls = { git = "https://github.com/HFQR/xitca-web", rev = "c5b22169db1dde1a2411872cffa5b6bd7e14d2f4" }
-xitca-unsafe-collection = { git = "https://github.com/HFQR/xitca-web", rev = "c5b22169db1dde1a2411872cffa5b6bd7e14d2f4" }
+xitca-client = { git = "https://github.com/HFQR/xitca-web", rev = "6d0f7cb03429b3c687f63f6b2f8853b4fac8a048" }
+xitca-http = { git = "https://github.com/HFQR/xitca-web", rev = "6d0f7cb03429b3c687f63f6b2f8853b4fac8a048" }
+xitca-io = { git = "https://github.com/HFQR/xitca-web", rev = "6d0f7cb03429b3c687f63f6b2f8853b4fac8a048" }
+xitca-service = { git = "https://github.com/HFQR/xitca-web", rev = "6d0f7cb03429b3c687f63f6b2f8853b4fac8a048" }
+xitca-tls = { git = "https://github.com/HFQR/xitca-web", rev = "6d0f7cb03429b3c687f63f6b2f8853b4fac8a048" }
+xitca-unsafe-collection = { git = "https://github.com/HFQR/xitca-web", rev = "6d0f7cb03429b3c687f63f6b2f8853b4fac8a048" }
 
 [profile.release]
-lto = true
+lto = "thin"
 opt-level = 3
 codegen-units = 1
 panic = "abort"

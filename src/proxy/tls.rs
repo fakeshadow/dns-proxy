@@ -46,7 +46,7 @@ impl TlsProxy {
         let addrs = udp_resolve(boot_strap_addr, host, port).await?;
 
         let mut root_certs = RootCertStore::empty();
-        root_certs.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|cert| {
+        root_certs.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|cert| {
             OwnedTrustAnchor::from_subject_spki_name_constraints(
                 cert.subject,
                 cert.spki,

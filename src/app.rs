@@ -14,13 +14,13 @@ use crate::{
     cache::Cache,
     config::{Config, UpstreamVariant},
     error::Error,
-    proxy::{udp::UdpProxy, Proxy},
+    proxy::{udp::UdpProxy, ProxyDyn},
 };
 
 pub struct App {
     listener: UdpSocket,
     cache: Cache,
-    proxy: Box<dyn Proxy>,
+    proxy: Box<dyn ProxyDyn>,
 }
 
 impl App {
@@ -89,7 +89,7 @@ impl App {
         let buf = match either {
             EitherBuf::Cache(cache) => cache,
             EitherBuf::Req(buf) => {
-                let mut res = self.proxy.proxy(buf).await?;
+                let mut res = self.proxy.proxy_dyn(buf).await?;
                 self.cache.set(&mut res);
                 res
             }

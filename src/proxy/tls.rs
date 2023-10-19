@@ -18,7 +18,7 @@ use xitca_io::{
 };
 use xitca_unsafe_collection::futures::{Select, SelectOutput};
 
-use crate::{error::Error, proxy::udp::udp_resolve, util::BoxFuture};
+use crate::{error::Error, proxy::udp::udp_resolve};
 
 use super::Proxy;
 
@@ -220,12 +220,10 @@ async fn connect(
 }
 
 impl Proxy for TlsProxy {
-    fn proxy(&self, buf: Box<[u8]>) -> BoxFuture<'_, Result<Vec<u8>, Error>> {
-        Box::pin(async move {
-            let (tx, rx) = oneshot::channel();
-            self.tx.send((buf, tx)).await?;
-            rx.await.map_err(Into::into)
-        })
+    async fn proxy(&self, buf: Box<[u8]>) -> Result<Vec<u8>, Error> {
+        let (tx, rx) = oneshot::channel();
+        self.tx.send((buf, tx)).await?;
+        rx.await.map_err(Into::into)
     }
 }
 

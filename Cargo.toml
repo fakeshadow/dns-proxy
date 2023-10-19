@@ -41,12 +41,12 @@ xitca-unsafe-collection = { version = "0.1", features = ["bytes"], optional = tr
 tokio = { version = "1.32", features = ["macros"] }
 
 [patch.crates-io]
-xitca-client = { git = "https://github.com/HFQR/xitca-web", rev = "76de69c185f1b749e557af5984d17b29043d0b86" }
-xitca-http = { git = "https://github.com/HFQR/xitca-web", rev = "76de69c185f1b749e557af5984d17b29043d0b86" }
-xitca-io = { git = "https://github.com/HFQR/xitca-web", rev = "76de69c185f1b749e557af5984d17b29043d0b86" }
-xitca-service = { git = "https://github.com/HFQR/xitca-web", rev = "76de69c185f1b749e557af5984d17b29043d0b86" }
-xitca-tls = { git = "https://github.com/HFQR/xitca-web", rev = "76de69c185f1b749e557af5984d17b29043d0b86" }
-xitca-unsafe-collection = { git = "https://github.com/HFQR/xitca-web", rev = "76de69c185f1b749e557af5984d17b29043d0b86" }
+xitca-client = { git = "https://github.com/HFQR/xitca-web", rev = "079d51b9f1f56bec5642ccdf627dbe0910091ae6" }
+xitca-http = { git = "https://github.com/HFQR/xitca-web", rev = "079d51b9f1f56bec5642ccdf627dbe0910091ae6" }
+xitca-io = { git = "https://github.com/HFQR/xitca-web", rev = "079d51b9f1f56bec5642ccdf627dbe0910091ae6" }
+xitca-service = { git = "https://github.com/HFQR/xitca-web", rev = "079d51b9f1f56bec5642ccdf627dbe0910091ae6" }
+xitca-tls = { git = "https://github.com/HFQR/xitca-web", rev = "079d51b9f1f56bec5642ccdf627dbe0910091ae6" }
+xitca-unsafe-collection = { git = "https://github.com/HFQR/xitca-web", rev = "079d51b9f1f56bec5642ccdf627dbe0910091ae6" }
 
 [profile.release]
 lto = "thin"

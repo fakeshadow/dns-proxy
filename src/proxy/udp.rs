@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use tokio::{net::UdpSocket, sync::Semaphore};
 
-use crate::{error::Error, util::BoxFuture};
+use crate::error::Error;
 
 use super::Proxy;
 
@@ -24,23 +24,21 @@ impl UdpProxy {
 }
 
 impl Proxy for UdpProxy {
-    fn proxy(&self, buf: Box<[u8]>) -> BoxFuture<'_, Result<Vec<u8>, Error>> {
-        Box::pin(async move {
-            let _permit = self.permit.acquire().await?;
+    async fn proxy(&self, buf: Box<[u8]>) -> Result<Vec<u8>, Error> {
+        let _permit = self.permit.acquire().await?;
 
-            let socket = UdpSocket::bind("0.0.0.0:0").await?;
-            socket.connect(self.addr).await?;
+        let socket = UdpSocket::bind("0.0.0.0:0").await?;
+        socket.connect(self.addr).await?;
 
-            socket.send(&buf).await?;
+        socket.send(&buf).await?;
 
-            let mut buf = vec![0; 512];
+        let mut buf = vec![0; 512];
 
-            let n = socket.recv(&mut buf).await?;
+        let n = socket.recv(&mut buf).await?;
 
-            buf.truncate(n);
+        buf.truncate(n);
 
-            Ok(buf)
-        })
+        Ok(buf)
     }
 }
 

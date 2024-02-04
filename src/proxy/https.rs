@@ -8,7 +8,7 @@ use xitca_client::{
         header::{HeaderMap, HeaderValue, ACCEPT, CONTENT_TYPE},
         Uri,
     },
-    Resolve,
+    Connect, Service,
 };
 
 use crate::error::Error;
@@ -98,16 +98,16 @@ pub struct BootstrapResolver {
     boot_strap_addr: SocketAddr,
 }
 
-/// a custom self contained dns resolver in case proxy is used as the only dns resolver.
-impl Resolve for BootstrapResolver {
-    #[inline]
-    async fn resolve(
-        &self,
-        hostname: &str,
-        port: u16,
-    ) -> Result<Vec<SocketAddr>, xitca_client::error::Error> {
-        udp_resolve(self.boot_strap_addr, hostname, port)
-            .await
-            .map_err(Into::into)
+impl<'r, 'c> Service<&'r mut Connect<'c>> for BootstrapResolver {
+    type Response = ();
+    // possible error type when resolving failed.
+    type Error = xitca_client::error::Error;
+
+    async fn call(&self, connect: &'r mut Connect<'c>) -> Result<Self::Response, Self::Error> {
+        let host = connect.hostname();
+        let port = connect.port();
+        let addrs = udp_resolve(self.boot_strap_addr, host, port).await?;
+        connect.set_addrs(addrs);
+        Ok(())
     }
 }

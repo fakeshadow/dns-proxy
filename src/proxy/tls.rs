@@ -5,7 +5,7 @@ use alloc::{collections::VecDeque, sync::Arc};
 use std::{error, io, net::SocketAddr};
 
 use http::Uri;
-use rustls::{ClientConfig, ClientConnection, OwnedTrustAnchor, RootCertStore, ServerName};
+use rustls::{pki_types::ServerName, ClientConfig, ClientConnection, RootCertStore};
 use tokio::{
     sync::{mpsc, oneshot},
     time,
@@ -40,24 +40,21 @@ impl TlsProxy {
             Some(host) => host,
             None => return Err(Error::from(InvalidUri(uri))),
         };
-        let server_name = host.try_into()?;
+
         let port = uri.port_u16().unwrap_or(853);
 
         let addrs = udp_resolve(boot_strap_addr, host, port).await?;
 
+        let server_name = host.to_owned().try_into()?;
+
         let mut root_certs = RootCertStore::empty();
-        root_certs.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|cert| {
-            OwnedTrustAnchor::from_subject_spki_name_constraints(
-                cert.subject,
-                cert.spki,
-                cert.name_constraints,
-            )
-        }));
+
+        root_certs.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
         let cfg = ClientConfig::builder()
-            .with_safe_defaults()
             .with_root_certificates(root_certs)
             .with_no_client_auth();
+
         let cfg = Arc::new(cfg);
 
         let (tx, rx) = mpsc::channel(256);
@@ -211,7 +208,7 @@ impl TlsContext {
 async fn connect(
     addrs: &[SocketAddr],
     cfg: &Arc<ClientConfig>,
-    server_name: &ServerName,
+    server_name: &ServerName<'static>,
 ) -> Result<TlsStream, Error> {
     let stream = crate::app::try_iter(addrs.iter(), TcpStream::connect).await?;
     let _ = stream.set_nodelay(true);

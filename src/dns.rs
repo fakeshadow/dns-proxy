@@ -2,12 +2,12 @@
 
 #![allow(clippy::upper_case_acronyms)]
 
-use core::ops::Deref;
-
-use std::{
-    io,
+use core::{
     net::{Ipv4Addr, Ipv6Addr},
+    ops::Deref,
 };
+
+use std::io;
 
 use tracing::warn;
 

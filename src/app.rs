@@ -1,11 +1,6 @@
-use core::future::Future;
+use core::{future::Future, net::SocketAddr};
 
-use std::{
-    io,
-    net::{SocketAddr, ToSocketAddrs},
-};
-
-use alloc::sync::Arc;
+use std::{io, net::ToSocketAddrs, sync::Arc};
 
 use tokio::net::UdpSocket;
 use tracing::error;

@@ -1,7 +1,5 @@
 #![forbid(unsafe_code)]
 
-extern crate alloc;
-
 mod app;
 mod cache;
 mod config;

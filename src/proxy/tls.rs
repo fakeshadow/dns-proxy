@@ -1,11 +1,8 @@
-use core::{convert::Infallible, fmt, time::Duration};
+use core::{convert::Infallible, fmt, net::SocketAddr, time::Duration};
 
-use alloc::{collections::VecDeque, sync::Arc};
-
-use std::{error, io, net::SocketAddr};
+use std::{collections::VecDeque, error, io, sync::Arc};
 
 use http::Uri;
-use rustls::{pki_types::ServerName, ClientConfig, ClientConnection, RootCertStore};
 use tokio::{
     sync::{mpsc, oneshot},
     time,
@@ -16,6 +13,7 @@ use xitca_io::{
     io::{AsyncIo, Interest},
     net::TcpStream,
 };
+use xitca_tls::rustls::{pki_types::ServerName, ClientConfig, ClientConnection, RootCertStore};
 use xitca_unsafe_collection::futures::{Select, SelectOutput};
 
 use crate::{error::Error, proxy::udp::udp_resolve};

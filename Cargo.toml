@@ -32,15 +32,15 @@ xitca-client = { version = "0.1", default-features = false, optional = true }
 # optional for DoT.
 http = { version = "1", optional = true }
 webpki-roots = { version = "0.26", optional = true }
-xitca-io = { version = "0.2.1", features = ["runtime"], optional = true }
-xitca-tls = { version = "0.2.3", features = ["rustls-ring-crypto"], optional = true }
-xitca-unsafe-collection = { version = "0.1", features = ["bytes"], optional = true }
+xitca-io = { version = "0.4", features = ["runtime"], optional = true }
+xitca-tls = { version = "0.4", features = ["rustls-ring-crypto"], optional = true }
+xitca-unsafe-collection = { version = "0.2", features = ["bytes"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.37", features = ["macros"] }
 
 [patch.crates-io]
-xitca-client = { git = "https://github.com/HFQR/xitca-web", rev = "d76b2e188edcbdd801ecb4a7359b4d56070d6dc4" }
+xitca-client = { git = "https://github.com/HFQR/xitca-web", rev = "74dd25a" }
 
 [profile.release]
 lto = "thin"

@@ -35,7 +35,7 @@ impl HttpProxy {
 
 impl Proxy for HttpProxy {
     async fn proxy(&self, buf: Box<[u8]>) -> Result<Vec<u8>, Error> {
-        let mut req = self.cli.post(self.uri.clone())?;
+        let mut req = self.cli.post(self.uri.clone());
 
         req.headers_mut().insert(ACCEPT, DNS_MSG_HDR.clone());
         req.headers_mut().insert(CONTENT_TYPE, DNS_MSG_HDR.clone());
